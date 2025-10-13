@@ -19,7 +19,7 @@ import shutil
 import tempfile
 
 # --- App Version and Update URL ---
-__version__ = "1.0.2"
+__version__ = "1.0.4"
 UPDATE_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/main.py"
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/version.txt"
 
@@ -1871,5 +1871,6 @@ if __name__ == '__main__':
     app = AdbControllerApp()
     app.mainloop()
 #ok
+
 
 
