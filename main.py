@@ -63,8 +63,7 @@ class AdbControllerApp(ctk.CTk):
         super().__init__()
 
         self.title("Devices Controller By Dars V3")
-        self.geometry("1366x768")
-        self.state('zoomed')
+        self.attributes('-fullscreen', True)  
         ctk.set_appearance_mode("Dark")
         ctk.set_default_color_theme("blue")
 
@@ -1059,3 +1058,4 @@ if __name__ == '__main__':
     multiprocessing.freeze_support()
     app = AdbControllerApp()
     app.mainloop()
+
