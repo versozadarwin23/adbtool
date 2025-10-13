@@ -16,6 +16,7 @@ from pathlib import Path
 import re
 import sys
 import shutil
+import tempfile
 
 # --- App Version and Update URL ---
 __version__ = "1.0.1"
@@ -88,9 +89,12 @@ def run_text_command(text_to_send, serial):
 
 def create_and_run_updater_script(new_file_path, old_file_path):
     """
-    Creates and runs a temporary script to replace the old file with the new one.
+    Creates and runs a temporary script in a hidden temp folder to replace the old file with the new one.
     """
     if sys.platform.startswith('win'):
+        temp_dir = tempfile.gettempdir()
+        script_path = Path(temp_dir) / "update_script.bat"
+
         script_content = f"""
 @echo off
 timeout /t 2 > nul
@@ -99,11 +103,15 @@ ren "{new_file_path}" "{os.path.basename(old_file_path)}"
 start "" "{old_file_path}"
 del "%~f0"
 """
-        script_path = old_file_path.parent / "update_script.bat"
         with open(script_path, "w") as f:
             f.write(script_content)
-        subprocess.Popen(['start', 'cmd', '/c', f'"{script_path}"'], shell=True)
+
+        # Run the script without showing a console window
+        subprocess.Popen([str(script_path)], creationflags=subprocess.CREATE_NO_WINDOW, shell=True)
     else:  # For macOS and Linux
+        temp_dir = tempfile.gettempdir()
+        script_path = Path(temp_dir) / "update_script.sh"
+
         script_content = f"""
 #!/bin/bash
 sleep 2
@@ -112,11 +120,10 @@ mv "{new_file_path}" "{old_file_path}"
 open "{old_file_path}"
 rm -- "$0"
 """
-        script_path = old_file_path.parent / "update_script.sh"
         with open(script_path, "w") as f:
             f.write(script_content)
         os.chmod(script_path, 0o755)
-        subprocess.Popen(['bash', f'"{script_path}"'])
+        subprocess.Popen(['bash', str(script_path)])
 
 
 # --- AdbControllerApp Class ---
@@ -689,7 +696,7 @@ The left-side panel features a **Tab View** with various command categories.
             except Exception as e:
                 print(f"An error occurred in capture loop: {e}")
                 self.is_capturing = False
-            time.sleep(0.05)
+            # time.sleep(0.05)
 
     def update_image(self):
         try:
@@ -735,7 +742,6 @@ The left-side panel features a **Tab View** with various command categories.
                 self.update_image_id = self.after(100, self.update_image)
 
         except Exception as e:
-            print(f"Error in update_image: {e}")
             self.stop_capture()
 
     def create_device_frame(self, serial):
@@ -1369,7 +1375,7 @@ The left-side panel features a **Tab View** with various command categories.
             except Exception as e:
                 print(f"An error occurred in capture loop: {e}")
                 self.is_capturing = False
-            time.sleep(0.05)
+            # time.sleep(0.05)
 
     def update_image(self):
         try:
@@ -1864,4 +1870,3 @@ if __name__ == '__main__':
     multiprocessing.freeze_support()
     app = AdbControllerApp()
     app.mainloop()
-
