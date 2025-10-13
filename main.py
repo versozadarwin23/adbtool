@@ -48,7 +48,7 @@ def run_text_command(text_to_send, serial):
     for char in text_to_send:
         try:
             # Magdagdag ng small delay bawat karakter
-            time.sleep(0.05)
+            # time.sleep(0.03)
             # Encode ang karakter para sa ADB
             encoded_char = char.replace(' ', '%s')
             command = ['shell', 'input', 'text', encoded_char]
@@ -293,11 +293,11 @@ class AdbControllerApp(ctk.CTk):
                                          font=ctk.CTkFont(weight="bold"))
         self.send_button.grid(row=3, column=0, sticky='ew', padx=15, pady=(5, 5))
 
-        self.remove_emoji_button = ctk.CTkButton(text_frame, text="Remove Emojis 🚫", command=self.remove_emojis_from_file,
+        self.remove_emoji_button = ctk.CTkButton(text_frame, text="Remove Emojis 🚫",
+                                                 command=self.remove_emojis_from_file,
                                                  fg_color="#ff5733", hover_color="#c04228", height=45,
                                                  font=ctk.CTkFont(weight="bold"))
         self.remove_emoji_button.grid(row=4, column=0, sticky='ew', padx=15, pady=(5, 15))
-
 
         # Image Tab
         image_frame = self.tab_view.tab("Image")
@@ -347,12 +347,13 @@ class AdbControllerApp(ctk.CTk):
                 # Rename the new file to main.py
                 os.rename(new_file_path, old_file_path)
 
-                self.status_label.configure(text=f"✅ Update successful! The app will now close.", text_color="#28a745")
+                # Magpakita ng pop-up message
+                messagebox.showinfo("Update Success",
+                                    "The application has been successfully updated. Please close and reopen the software to use the new version.")
 
-                # Automatically close the application after a short delay
-                # This gives the user time to read the status message
-                time.sleep(2)
-                self.destroy()  # This command will close the app
+                self.status_label.configure(text=f"✅ Update successful! Please restart the application.",
+                                            text_color="#28a745")
+                self.destroy()
 
             except requests.exceptions.RequestException as e:
                 self.status_label.configure(text=f"❌ Error downloading update: {e}", text_color="#dc3545")
@@ -452,7 +453,8 @@ class AdbControllerApp(ctk.CTk):
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(cleaned_content)
 
-            self.status_label.configure(text="✅ Emojis and symbols successfully removed from the file.", text_color="#28a745")
+            self.status_label.configure(text="✅ Emojis and symbols successfully removed from the file.",
+                                        text_color="#28a745")
 
         except FileNotFoundError:
             self.status_label.configure(text="❌ File not found.", text_color="#dc3545")
@@ -564,7 +566,7 @@ class AdbControllerApp(ctk.CTk):
                 print(f"An error occurred in capture loop: {e}")
                 self.is_capturing = False
             # Small delay to reduce CPU usage
-            time.sleep(0.05)
+            # time.sleep(0.03)
 
     def update_image(self):
         try:
@@ -1060,4 +1062,3 @@ if __name__ == '__main__':
     multiprocessing.freeze_support()
     app = AdbControllerApp()
     app.mainloop()
-#ok
