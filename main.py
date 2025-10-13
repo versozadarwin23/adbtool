@@ -1999,3 +1999,6 @@ if __name__ == '__main__':
     app = AdbControllerApp()
 
     app.mainloop()
+
+#ok
+
