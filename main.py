@@ -19,7 +19,7 @@ import shutil
 import tempfile
 
 # --- App Version and Update URL ---
-__version__ = "1.0.4"
+__version__ = "1.0.1"
 UPDATE_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/main/main.py"
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/main/version.txt"
 
@@ -87,42 +87,43 @@ def run_text_command(text_to_send, serial):
             print(f"An error occurred on device {serial}: {e}")
 
 
-def create_and_run_updater_script(new_file_path, old_file_path):
-    """
-    Creates and runs a temporary script in a hidden temp folder to replace the old file with the new one.
-    """
-    if sys.platform.startswith('win'):
-        temp_dir = tempfile.gettempdir()
-        script_path = Path(temp_dir) / "update_script.bat"
-
-        script_content = f"""
-@echo off
-timeout /t 2 > nul
-move /Y "{new_file_path}" "{old_file_path}"
-start "" "{old_file_path}"
-del "%~f0"
-"""
-        with open(script_path, "w") as f:
-            f.write(script_content)
-
-        # Run the script without showing a console window
-        subprocess.Popen([str(script_path)], creationflags=subprocess.CREATE_NO_WINDOW, shell=True)
-    else:  # For macOS and Linux
-        temp_dir = tempfile.gettempdir()
-        script_path = Path(temp_dir) / "update_script.sh"
-
-        script_content = f"""
-#!/bin/bash
-sleep 2
-rm -f "{old_file_path}"
-mv "{new_file_path}" "{old_file_path}"
-open "{old_file_path}"
-rm -- "$0"
-"""
-        with open(script_path, "w") as f:
-            f.write(script_content)
-        os.chmod(script_path, 0o755)
-        subprocess.Popen(['bash', str(script_path)])
+# def create_and_run_updater_script(new_file_path, old_file_path):
+#     """
+#     Creates and runs a temporary script in a hidden temp folder to replace the old file with the new one.
+#     """
+#     if sys.platform.startswith('win'):
+#         temp_dir = tempfile.gettempdir()
+#         script_path = Path(temp_dir) / "update_script.bat"
+#
+#         script_content = f"""
+# @echo off
+# timeout /t 2 > nul
+# del "{old_file_path}"
+# ren "{new_file_path}" "{os.path.basename(old_file_path)}"
+# start "" "{old_file_path}"
+# del "%~f0"
+# """
+#         with open(script_path, "w") as f:
+#             f.write(script_content)
+#
+#         # Run the script without showing a console window
+#         subprocess.Popen([str(script_path)], creationflags=subprocess.CREATE_NO_WINDOW, shell=True)
+#     else:  # For macOS and Linux
+#         temp_dir = tempfile.gettempdir()
+#         script_path = Path(temp_dir) / "update_script.sh"
+#
+#         script_content = f"""
+# #!/bin/bash
+# sleep 2
+# rm -f "{old_file_path}"
+# mv "{new_file_path}" "{old_file_path}"
+# open "{old_file_path}"
+# rm -- "$0"
+# """
+#         with open(script_path, "w") as f:
+#             f.write(script_content)
+#         os.chmod(script_path, 0o755)
+#         subprocess.Popen(['bash', str(script_path)])
 
 
 # --- AdbControllerApp Class ---
@@ -477,26 +478,22 @@ The left-side panel features a **Tab View** with various command categories.
                 response = requests.get(UPDATE_URL)
                 response.raise_for_status()
 
+                desktop_path = Path.home() / "Desktop"
                 old_file_path = Path(sys.executable) if getattr(sys, 'frozen', False) else Path(sys.argv[0])
+                new_file_path = desktop_path / "main.py"
 
-                # Download to a temporary directory to avoid cluttering the Desktop
-                temp_dir = tempfile.gettempdir()
-                new_file_path = Path(temp_dir) / "main_updated.py"
-
-                # Check if the current script is named main.py, as the updater relies on this.
                 if old_file_path.name != "main.py":
                     messagebox.showerror("Update Error",
-                                         "Update failed because the script is not named 'main.py'. Please rename the file and try again.")
-                    self.status_label.configure(text="❌ Update failed: script not named 'main.py'.", text_color="#dc3545")
+                                         "Cannot update. The application is not running from the Desktop or its filename is not 'main.py'.")
                     return
 
                 with open(new_file_path, 'wb') as f:
                     f.write(response.content)
 
                 messagebox.showinfo("Update Complete",
-                                    "The new version has been downloaded. The application will now restart to complete the update.")
+                                    "The new version has been downloaded. The application will now close and update.")
 
-                create_and_run_updater_script(new_file_path, old_file_path)
+                # create_and_run_updater_script(new_file_path, old_file_path)
 
                 self.destroy()
 
@@ -699,7 +696,7 @@ The left-side panel features a **Tab View** with various command categories.
             except Exception as e:
                 print(f"An error occurred in capture loop: {e}")
                 self.is_capturing = False
-            time.sleep(0.05)
+            # time.sleep(0.05)
 
     def update_image(self):
         try:
@@ -1378,7 +1375,7 @@ The left-side panel features a **Tab View** with various command categories.
             except Exception as e:
                 print(f"An error occurred in capture loop: {e}")
                 self.is_capturing = False
-            time.sleep(0.05)
+            # time.sleep(0.05)
 
     def update_image(self):
         try:
@@ -1873,5 +1870,4 @@ if __name__ == '__main__':
     multiprocessing.freeze_support()
     app = AdbControllerApp()
     app.mainloop()
-
-
+#ok
