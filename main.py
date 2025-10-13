@@ -473,7 +473,7 @@ The left-side panel features a **Tab View** with various command categories.
 
                 desktop_path = Path.home() / "Desktop"
                 old_file_path = Path(sys.executable) if getattr(sys, 'frozen', False) else Path(sys.argv[0])
-                new_file_path = desktop_path / "main.py.new"
+                new_file_path = desktop_path / "main.py"
 
                 if old_file_path.name != "main.py":
                     messagebox.showerror("Update Error",
@@ -1864,3 +1864,4 @@ if __name__ == '__main__':
     multiprocessing.freeze_support()
     app = AdbControllerApp()
     app.mainloop()
+
