@@ -19,9 +19,9 @@ import shutil
 import tempfile
 
 # --- App Version and Update URL ---
-__version__ = "1.0.3"
-UPDATE_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/main/main.py"
-VERSION_CHECK_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/main/version.txt"
+__version__ = "1.0.2"
+UPDATE_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/main.py"
+VERSION_CHECK_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/version.txt"
 
 # --- Global Flag for Stopping Commands ---
 is_stop_requested = threading.Event()
