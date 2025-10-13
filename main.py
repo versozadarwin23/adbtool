@@ -13,6 +13,7 @@ import random
 import concurrent.futures
 import requests
 from pathlib import Path
+import re
 
 
 # --- Helper Functions (dapat nasa labas ng class) ---
@@ -37,18 +38,23 @@ def run_adb_command(command, serial):
 
 def run_text_command(text_to_send, serial):
     """
-    Sends a specific text string as a single ADB text command.
+    Sends a specific text string as individual ADB text commands with a delay.
     """
     if not text_to_send:
         print(f"Text is empty. Cannot send command to {serial}.")
         return
 
-    try:
-        # Use a single command for the entire string
-        command = ['shell', 'input', 'text', text_to_send.replace(' ', '%s')]
-        run_adb_command(command, serial)
-    except Exception as e:
-        print(f"An error occurred on device {serial}: {e}")
+    # Mag-type ng bawat karakter
+    for char in text_to_send:
+        try:
+            # Magdagdag ng small delay bawat karakter
+            time.sleep(0.05)
+            # Encode ang karakter para sa ADB
+            encoded_char = char.replace(' ', '%s')
+            command = ['shell', 'input', 'text', encoded_char]
+            run_adb_command(command, serial)
+        except Exception as e:
+            print(f"An error occurred on device {serial}: {e}")
 
 
 # --- AdbControllerApp Class ---
@@ -115,7 +121,7 @@ class AdbControllerApp(ctk.CTk):
         self.detect_button = ctk.CTkButton(device_section_frame, text="Refresh", command=self.detect_devices,
                                            width=100, corner_radius=8, fg_color="#3a3a3a", hover_color="#505050")
         self.detect_button.grid(row=0, column=1, sticky='e')
-        
+
         # New Update Button
         self.update_button = ctk.CTkButton(device_section_frame, text="Update", command=self.update_app,
                                            fg_color="#007bff", hover_color="#0056b3", corner_radius=8)
@@ -150,17 +156,16 @@ class AdbControllerApp(ctk.CTk):
         # Status label at the bottom
         self.status_label = ctk.CTkLabel(self.control_panel, text="", anchor='w', font=("Segoe UI", 14, "italic"))
         self.status_label.grid(row=5, column=0, sticky='ew', padx=25, pady=(10, 0))
-        
+
         # Device View Panel (right side)
         self.device_view_panel = ctk.CTkFrame(self, fg_color="#1e1e1e", corner_radius=15)
         self.device_view_panel.grid(row=0, column=1, sticky="nsew", padx=(20, 20), pady=(20, 20))
 
         # Global "Stop All Commands" button
         self.stop_all_button = ctk.CTkButton(self.device_view_panel, text="Stop All Commands",
-                                                command=self.stop_all_commands, fg_color="#ffc107",
-                                                hover_color="#e0a800", text_color="#2b2b2b", corner_radius=8)
+                                             command=self.stop_all_commands, fg_color="#ffc107",
+                                             hover_color="#e0a800", text_color="#2b2b2b", corner_radius=8)
         self.stop_all_button.pack(side="bottom", fill="x", padx=15, pady=(0, 15))
-
 
         self.detect_devices()
 
@@ -208,7 +213,6 @@ class AdbControllerApp(ctk.CTk):
                                                        hover_color="#c82333", corner_radius=8)
         self.force_stop_fb_lite_button.grid(row=0, column=1, sticky='ew', padx=(5, 0))
 
-
         # TikTok Tab
         tiktok_frame = self.tab_view.tab("TikTok")
         tiktok_frame.columnconfigure(0, weight=1)
@@ -237,7 +241,6 @@ class AdbControllerApp(ctk.CTk):
                                                            command=self.force_stop_tiktok_lite, fg_color="#dc3545",
                                                            hover_color="#c82333", corner_radius=8)
         self.force_stop_tiktok_lite_button.grid(row=0, column=1, sticky='ew', padx=(5, 0))
-
 
         # YouTube Tab
         youtube_frame = self.tab_view.tab("YouTube")
@@ -268,11 +271,10 @@ class AdbControllerApp(ctk.CTk):
                                                        hover_color="#c82333", corner_radius=8)
         self.force_stop_youtube_button.grid(row=0, column=1, sticky='ew', padx=(5, 0))
 
-
         # Text Command Tab
         text_frame = self.tab_view.tab("Text Cmd")
         text_frame.columnconfigure(0, weight=1)
-        text_frame.rowconfigure(3, weight=1)
+        text_frame.rowconfigure(4, weight=1)
 
         ctk.CTkLabel(text_frame, text="Text Command from File:", font=ctk.CTkFont(size=14, weight="bold")).grid(row=0,
                                                                                                                 column=0,
@@ -291,6 +293,11 @@ class AdbControllerApp(ctk.CTk):
                                          font=ctk.CTkFont(weight="bold"))
         self.send_button.grid(row=3, column=0, sticky='ew', padx=15, pady=(5, 5))
 
+        self.remove_emoji_button = ctk.CTkButton(text_frame, text="Remove Emojis 🚫", command=self.remove_emojis_from_file,
+                                                 fg_color="#ff5733", hover_color="#c04228", height=45,
+                                                 font=ctk.CTkFont(weight="bold"))
+        self.remove_emoji_button.grid(row=4, column=0, sticky='ew', padx=15, pady=(5, 15))
+
 
         # Image Tab
         image_frame = self.tab_view.tab("Image")
@@ -307,22 +314,22 @@ class AdbControllerApp(ctk.CTk):
                                                 font=ctk.CTkFont(weight="bold"))
         self.share_image_button.grid(row=2, column=0, sticky='ew', padx=15, pady=(10, 5))
 
-
     def update_app(self):
         """
         Downloads the latest version of the app from a GitHub URL,
         deletes the old file, saves the new one to the Desktop, and
         then automatically closes the application.
         """
+
         def _update_in_thread():
             update_url = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/main.py"
             try:
                 self.status_label.configure(text="Downloading latest version...", text_color="#007bff")
-                
+
                 # Use requests to download the new file content
                 response = requests.get(update_url)
                 response.raise_for_status()  # This raises an exception for bad status codes
-                
+
                 # Define file paths
                 desktop_path = Path.home() / "Desktop"
                 old_file_path = desktop_path / "main.py"
@@ -336,29 +343,31 @@ class AdbControllerApp(ctk.CTk):
                 if old_file_path.exists():
                     os.remove(old_file_path)
                     print("✅ Old main.py file deleted.")
-                
+
                 # Rename the new file to main.py
                 os.rename(new_file_path, old_file_path)
-                
+
                 self.status_label.configure(text=f"✅ Update successful! The app will now close.", text_color="#28a745")
-                
+
                 # Automatically close the application after a short delay
                 # This gives the user time to read the status message
                 time.sleep(2)
-                self.destroy() # This command will close the app
-                
+                self.destroy()  # This command will close the app
+
             except requests.exceptions.RequestException as e:
                 self.status_label.configure(text=f"❌ Error downloading update: {e}", text_color="#dc3545")
-                messagebox.showerror("Update Error", f"Failed to download update. Check your internet connection.\nError: {e}")
+                messagebox.showerror("Update Error",
+                                     f"Failed to download update. Check your internet connection.\nError: {e}")
             except FileNotFoundError:
-                self.status_label.configure(text="❌ Old file not found for deletion. New file saved.", text_color="#ffc107")
-                messagebox.showinfo("Update", "Update successful! Please restart the application to use the new version.")
+                self.status_label.configure(text="❌ Old file not found for deletion. New file saved.",
+                                            text_color="#ffc107")
+                messagebox.showinfo("Update",
+                                    "Update successful! Please restart the application to use the new version.")
                 self.destroy()
             except Exception as e:
                 self.status_label.configure(text=f"❌ An error occurred during update: {e}", text_color="#dc3545")
                 messagebox.showerror("Update Error", f"An unexpected error occurred.\nError: {e}")
                 self.destroy()
-
 
         # Run the update process in a separate thread to prevent the GUI from freezing
         update_thread = threading.Thread(target=_update_in_thread, daemon=True)
@@ -411,6 +420,44 @@ class AdbControllerApp(ctk.CTk):
     def send_text_to_devices(self):
         send_thread = threading.Thread(target=self._threaded_send_text, daemon=True)
         send_thread.start()
+
+    def remove_emojis_from_file(self):
+        file_path = self.file_path_entry.get()
+        if not file_path:
+            self.status_label.configure(text="⚠️ Please select a text file first.", text_color="#ffc107")
+            return
+
+        try:
+            # Pinalitan ang regex pattern para maalis ang mas maraming emojis at symbols.
+            emoji_pattern = re.compile("["
+                                       "\U0001F600-\U0001F64F"  # emoticons
+                                       "\U0001F300-\U0001F5FF"  # symbols & pictographs
+                                       "\U0001F680-\U0001F6FF"  # transport & map symbols
+                                       "\U0001F700-\U0001F77F"  # alchemical symbols
+                                       "\U0001F780-\U0001F7FF"  # Geometric Shapes Extended
+                                       "\U0001F800-\U0001F8FF"  # Supplemental Arrows-C
+                                       "\U0001F900-\U0001F9FF"  # Supplemental Symbols and Pictographs
+                                       "\U0001FA00-\U0001FA6F"  # Chess Symbols
+                                       "\U0001FA70-\U0001FAFF"  # Symbols and Pictographs Extended-A
+                                       "\U00002702-\U000027B0"  # Dingbats
+                                       "\U00002600-\U000026FF"  # Miscellaneous Symbols (kasama ang ☕)
+                                       "\U000025A0-\U000025FF"  # Geometric Shapes (kasama ang ⬛)
+                                       "]+", flags=re.UNICODE)
+
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            cleaned_content = emoji_pattern.sub(r'', content)
+
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(cleaned_content)
+
+            self.status_label.configure(text="✅ Emojis and symbols successfully removed from the file.", text_color="#28a745")
+
+        except FileNotFoundError:
+            self.status_label.configure(text="❌ File not found.", text_color="#dc3545")
+        except Exception as e:
+            self.status_label.configure(text=f"❌ An error occurred: {e}", text_color="#dc3545")
 
     def detect_devices(self):
         self.stop_capture()
@@ -469,9 +516,8 @@ class AdbControllerApp(ctk.CTk):
         self.selected_device_serial = new_serial
 
         for widget in self.device_view_panel.winfo_children():
-             if widget != self.stop_all_button:
+            if widget != self.stop_all_button:
                 widget.destroy()
-
 
         self.device_frames = {}
         self.device_canvases = {}
