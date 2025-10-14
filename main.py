@@ -79,7 +79,6 @@ def run_text_command(text_to_send, serial):
             return
 
         try:
-            time.sleep(0.05)
             encoded_char = char.replace(' ', '%s')
             command = ['shell', 'input', 'text', encoded_char]
             run_adb_command(command, serial)
@@ -89,8 +88,6 @@ def run_text_command(text_to_send, serial):
 
 def create_and_run_updater_script(new_file_path, old_file_path):
     try:
-        time.sleep(2)
-        # Palitan ang lumang file ng bago
         shutil.move(str(new_file_path), str(old_file_path))
 
         # I-restart ang app
@@ -675,7 +672,6 @@ The left-side panel features a **Tab View** with various command categories.
             except Exception as e:
                 print(f"An error occurred in capture loop: {e}")
                 self.is_capturing = False
-            # time.sleep(0.05)
 
     def update_image(self):
         try:
@@ -1354,7 +1350,6 @@ The left-side panel features a **Tab View** with various command categories.
             except Exception as e:
                 print(f"An error occurred in capture loop: {e}")
                 self.is_capturing = False
-            # time.sleep(0.05)
 
     def update_image(self):
         try:
@@ -1850,4 +1845,5 @@ if __name__ == '__main__':
     app = AdbControllerApp()
     app.mainloop()
 # ok
+
 
