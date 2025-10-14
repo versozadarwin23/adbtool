@@ -43,7 +43,6 @@ def run_adb_command(command, serial):
                 process.terminate()  # Use terminate to kill the process
                 print(f"🛑 Terminated ADB command on device {serial}.")
                 return
-            time.sleep(0.1)  # Small delay to reduce CPU usage
 
         stdout, stderr = process.communicate(timeout=10)
         if process.returncode != 0:
@@ -1845,5 +1844,6 @@ if __name__ == '__main__':
     app = AdbControllerApp()
     app.mainloop()
 # ok
+
 
 
