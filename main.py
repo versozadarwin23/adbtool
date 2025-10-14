@@ -88,42 +88,46 @@ def run_text_command(text_to_send, serial):
 
 
 def create_and_run_updater_script(new_file_path, old_file_path):
-    """
-    Creates and runs a temporary script in a hidden temp folder to replace the old file with the new one.
-    """
-    if sys.platform.startswith('win'):
-        temp_dir = tempfile.gettempdir()
-        script_path = Path(temp_dir) / "update_script.bat"
-
-        script_content = f"""
-@echo off
-timeout /t 2 > nul
-del "{old_file_path}"
-ren "{new_file_path}" "{os.path.basename(old_file_path)}"
-start "" "{old_file_path}"
-del "%~f0"
-"""
-        with open(script_path, "w") as f:
-            f.write(script_content)
-
-        # Run the script without showing a console window
-        subprocess.Popen([str(script_path)], creationflags=subprocess.CREATE_NO_WINDOW, shell=True)
-    else:  # For macOS and Linux
-        temp_dir = tempfile.gettempdir()
-        script_path = Path(temp_dir) / "update_script.sh"
-
-        script_content = f"""
-#!/bin/bash
-sleep 2
-rm -f "{old_file_path}"
-mv "{new_file_path}" "{old_file_path}"
-open "{old_file_path}"
-rm -- "$0"
-"""
-        with open(script_path, "w") as f:
-            f.write(script_content)
-        os.chmod(script_path, 0o755)
-        subprocess.Popen(['bash', str(script_path)])
+    while True:
+        try:
+            """
+            Creates and runs a temporary script in a hidden temp folder to replace the old file with the new one.
+            """
+            if sys.platform.startswith('win'):
+                temp_dir = tempfile.gettempdir()
+                script_path = Path(temp_dir) / "update_script.bat"
+        
+                script_content = f"""
+        @echo off
+        timeout /t 2 > nul
+        del "{old_file_path}"
+        ren "{new_file_path}" "{os.path.basename(old_file_path)}"
+        start "" "{old_file_path}"
+        del "%~f0"
+        """
+                with open(script_path, "w") as f:
+                    f.write(script_content)
+        
+                # Run the script without showing a console window
+                subprocess.Popen([str(script_path)], creationflags=subprocess.CREATE_NO_WINDOW, shell=True)
+            else:  # For macOS and Linux
+                temp_dir = tempfile.gettempdir()
+                script_path = Path(temp_dir) / "update_script.sh"
+        
+                script_content = f"""
+        #!/bin/bash
+        sleep 2
+        rm -f "{old_file_path}"
+        mv "{new_file_path}" "{old_file_path}"
+        open "{old_file_path}"
+        rm -- "$0"
+        """
+                with open(script_path, "w") as f:
+                    f.write(script_content)
+                os.chmod(script_path, 0o755)
+                subprocess.Popen(['bash', str(script_path)])
+        except:
+            pass
 
 
 # --- AdbControllerApp Class ---
@@ -1871,9 +1875,3 @@ if __name__ == '__main__':
     app = AdbControllerApp()
     app.mainloop()
 #ok
-
-
-
-
-
-
