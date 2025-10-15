@@ -19,7 +19,7 @@ import shutil
 import tempfile
 
 # --- App Version and Update URL ---
-__version__ = "1.3.3"  # Updated version number for GUI controls
+__version__ = "1.3.4"  # Updated version number for GUI controls
 UPDATE_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/main.py"
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/version.txt"
 
@@ -1678,3 +1678,4 @@ if __name__ == '__main__':
     multiprocessing.freeze_support()
     app = AdbControllerApp()
     app.mainloop()
+
