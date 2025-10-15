@@ -19,7 +19,7 @@ import shutil
 import tempfile
 
 # --- App Version and Update URL ---
-__version__ = "1.3.2"  # Updated version number for GUI controls
+__version__ = "1.3.3"  # Updated version number for GUI controls
 UPDATE_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/main.py"
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/version.txt"
 
@@ -135,7 +135,7 @@ class AdbControllerApp(ctk.CTk):
         super().__init__()
 
         # --- Configuration for Minimalist Tech Look ---
-        self.title("ADB Commander Console")
+        self.title(f"ADB BY DARS: V{__version__}")
         # Removed fullscreen attribute. Set initial size and start zoomed/maximized.
         self.geometry("1200x800")
         self.state('zoomed')
@@ -168,6 +168,7 @@ class AdbControllerApp(ctk.CTk):
         self.is_capturing = False
         self.apk_path = None  # New variable for APK installation
         self.is_muted = False  # State for volume control
+        self.update_check_job = None  # New attribute for scheduled check
 
         # Use a higher max_workers count as I/O operations (ADB) are often blocking
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=multiprocessing.cpu_count() * 4)
@@ -188,7 +189,7 @@ class AdbControllerApp(ctk.CTk):
         self.control_panel_scrollable.grid_columnconfigure(0, weight=1)
 
         # Title - White and bold
-        ctk.CTkLabel(self.control_panel_scrollable, text="ADB TOOL BY DARS:",
+        ctk.CTkLabel(self.control_panel_scrollable, text=f"ADB TOOL BY DARS: V{__version__}",
                      font=ctk.CTkFont(size=36, weight="bold"),
                      text_color=self.ACCENT_COLOR).grid(
             row=0, column=0, pady=(20, 10), sticky='ew', padx=25)
@@ -198,38 +199,12 @@ class AdbControllerApp(ctk.CTk):
                                                                                                sticky='ew',
                                                                                                padx=25, pady=15)
 
-        # --- NEW: GUI Window Control Section ---
-        gui_control_label = ctk.CTkLabel(self.control_panel_scrollable, text="WINDOW CONTROLS (GUI)",
-                                         font=ctk.CTkFont(size=16, weight="bold"), text_color=self.ACCENT_COLOR)
-        gui_control_label.grid(row=2, column=0, sticky='w', padx=25, pady=(5, 5))
+        # --- (Removed GUI Window Control Section) ---
+        # The rows for GUI control buttons were 2 and 3, now shifted up.
 
-        gui_control_frame = ctk.CTkFrame(self.control_panel_scrollable, fg_color=self.FRAME_COLOR)
-        gui_control_frame.grid(row=3, column=0, sticky='ew', padx=25, pady=(0, 15))
-        gui_control_frame.columnconfigure(0, weight=1)
-        gui_control_frame.columnconfigure(1, weight=1)
-        gui_control_frame.columnconfigure(2, weight=1)
-
-        # Minimize Button
-        ctk.CTkButton(gui_control_frame, text="Minimize ➖", command=self.minimize_gui,
-                      fg_color="#3A3A3A", hover_color="#555555", corner_radius=8, height=35).grid(row=0, column=0,
-                                                                                                  padx=(10, 5), pady=10,
-                                                                                                  sticky='ew')
-
-        # Maximize/Restore Button
-        self.max_restore_button = ctk.CTkButton(gui_control_frame, text="Maximize 🔲", command=self.toggle_maximize_gui,
-                                                fg_color="#3A3A3A", hover_color="#555555", corner_radius=8, height=35)
-        self.max_restore_button.grid(row=0, column=1, padx=5, pady=10, sticky='ew')
-
-        # Close Button
-        ctk.CTkButton(gui_control_frame, text="Close App ❌", command=self.close_gui,
-                      fg_color=self.DANGER_COLOR, hover_color="#CC4028", corner_radius=8, height=35,
-                      text_color=self.ACCENT_COLOR).grid(row=0, column=2, padx=(5, 10), pady=10, sticky='ew')
-
-        # --- END GUI Window Control Section ---
-
-        # Device Management Section (Shifted to row 4)
+        # Device Management Section (Now at row 2, shifted from row 4)
         device_section_frame = ctk.CTkFrame(self.control_panel_scrollable, fg_color="transparent")
-        device_section_frame.grid(row=4, column=0, sticky="ew", padx=25, pady=5)
+        device_section_frame.grid(row=2, column=0, sticky="ew", padx=25, pady=5)
         device_section_frame.grid_columnconfigure(0, weight=1)
         device_section_frame.grid_columnconfigure(1, weight=1)
 
@@ -243,24 +218,24 @@ class AdbControllerApp(ctk.CTk):
                                            border_width=1)
         self.detect_button.grid(row=0, column=1, sticky='e', pady=(0, 5))
 
-        self.update_button = ctk.CTkButton(device_section_frame, text=f"UPDATE NOW",
+        self.update_button = ctk.CTkButton(device_section_frame, text=f"UPDATE NOW (V{__version__})",
                                            command=self.update_app,
                                            fg_color="#444444", hover_color="#666666", corner_radius=8,
                                            font=ctk.CTkFont(size=14, weight="bold"), height=35,
                                            text_color=self.ACCENT_COLOR)
         self.update_button.grid(row=1, column=0, columnspan=2, sticky='ew', pady=(5, 10))
 
-        # Device List - Light text on dark background with clear selection highlight (Shifted to row 5)
+        # Device List - Light text on dark background with clear selection highlight (Now at row 3, shifted from row 5)
         self.device_listbox = tk.Listbox(self.control_panel_scrollable, height=6, font=("Consolas", 14),
                                          # Mono font for tech feel
                                          bg=self.BACKGROUND_COLOR, fg=self.SUCCESS_COLOR,
                                          selectbackground=self.ACCENT_COLOR,
                                          selectforeground="#101010", borderwidth=0, highlightthickness=1,
                                          highlightcolor=self.ACCENT_COLOR, relief='flat')
-        self.device_listbox.grid(row=5, column=0, sticky='ew', padx=25, pady=(5, 20))
+        self.device_listbox.grid(row=3, column=0, sticky='ew', padx=25, pady=(5, 20))
         self.device_listbox.bind('<<ListboxSelect>>', self.on_device_select)
 
-        # Tab View - White segmented buttons for clean look (Shifted to row 6)
+        # Tab View - White segmented buttons for clean look (Now at row 4, shifted from row 6)
         self.tab_view = ctk.CTkTabview(self.control_panel_scrollable,
                                        segmented_button_selected_color=self.ACCENT_COLOR,
                                        segmented_button_selected_hover_color=self.ACCENT_HOVER,
@@ -269,7 +244,7 @@ class AdbControllerApp(ctk.CTk):
                                        text_color=self.TEXT_COLOR,
                                        corner_radius=10,
                                        height=550)
-        self.tab_view.grid(row=6, column=0, sticky="nsew", padx=25, pady=10)
+        self.tab_view.grid(row=4, column=0, sticky="nsew", padx=25, pady=10)
 
         self.tab_view.add("About")
         self.tab_view.add("ADB Utilities")
@@ -282,10 +257,10 @@ class AdbControllerApp(ctk.CTk):
 
         self._configure_tab_layouts()
 
-        # Status Bar - Thicker status bar at the bottom (Shifted to row 7)
+        # Status Bar - Thicker status bar at the bottom (Now at row 5, shifted from row 7)
         self.status_label = ctk.CTkLabel(self.control_panel_scrollable, text="Awaiting Command...", anchor='w',
                                          font=("Consolas", 15, "italic"), text_color="#A9A9A9", height=40)
-        self.status_label.grid(row=7, column=0, sticky='ew', padx=25, pady=(10, 0))
+        self.status_label.grid(row=5, column=0, sticky='ew', padx=25, pady=(10, 0))
 
         # --- Device View Panel Setup (Right) ---
         self.device_view_panel = ctk.CTkFrame(self, fg_color=self.BACKGROUND_COLOR, corner_radius=15)
@@ -302,39 +277,96 @@ class AdbControllerApp(ctk.CTk):
         self.detect_devices()
         self.check_for_updates()
 
-    # --- NEW GUI Window Control Methods ---
-    def minimize_gui(self):
-        """Minimizes the entire CTk window."""
-        self.iconify()
+        # Start the recurring check after initial setup
+        self.start_periodic_update_check()
 
-    def toggle_maximize_gui(self):
-        """Toggles between maximized and normal window state."""
-        if self.state() == 'normal':
-            self.state('zoomed')  # Maximize
-            self.max_restore_button.configure(text="Restore Down ❐")
-        else:
-            self.state('normal')  # Restore Down
-            self.max_restore_button.configure(text="Maximize 🔲")
+    # NEW METHOD: Setup periodic update check
+    def start_periodic_update_check(self):
+        """Starts a recurring, silent update check every 60 seconds (60000 ms)."""
+        # 60000 milliseconds = 1 minute
+        self.update_check_job = self.after(60000, self._periodic_check_updates)
 
-    def close_gui(self):
-        """Calls the safe closing method for the app."""
-        self.on_closing()
+    def _periodic_check_updates(self):
+        """Internal method called periodically to silently check for updates."""
+        # We run the check in a thread to keep the GUI responsive
+        threading.Thread(target=self._check_and_reschedule, daemon=True).start()
+
+    def _check_and_reschedule(self):
+        """Checks for updates and reschedules the next check."""
+        try:
+            # Only perform the actual network check. Do not update the status label unless an error occurs or an update is found.
+            response = requests.get(VERSION_CHECK_URL, timeout=10)
+            response.raise_for_status()
+
+            latest_version = response.text.strip()
+            if latest_version > __version__:
+                # Only show prompt if a new version is available
+                self.after(0, self.ask_for_update, latest_version)
+
+        except requests.exceptions.RequestException:
+            # Errors are expected occasionally (e.g., no internet/server down).
+            # We fail silently as requested. No status bar update is performed here.
+            pass
+        except Exception:
+            # Catch all other unexpected errors silently
+            pass
+        finally:
+            # Reschedule itself regardless of success or failure
+            self.update_check_job = self.after(60000, self._periodic_check_updates)
 
     def check_for_updates(self):
-        # ... (Existing implementation is fine)
+        """
+        Modified existing check_for_updates to only run once on startup
+        and handle errors/messages explicitly.
+        """
+
         def _check_in_thread():
             try:
-                response = requests.get(VERSION_CHECK_URL, timeout=5)
-                response.raise_for_status()
+                # Use a slightly longer timeout for version check
+                response = requests.get(VERSION_CHECK_URL, timeout=10)
+                response.raise_for_status()  # Raise HTTPError for bad status codes (4xx or 5xx)
+
                 latest_version = response.text.strip()
                 if latest_version > __version__:
                     self.after(0, self.ask_for_update, latest_version)
+
+            except requests.exceptions.HTTPError as http_err:
+                status_code = http_err.response.status_code
+                self.after(0, lambda: self.status_label.configure(
+                    text=f"❌ ERROR: Failed to check for update. HTTP Status: {status_code}",
+                    text_color=self.DANGER_COLOR))
+                self.after(0, lambda: messagebox.showwarning(
+                    "Update Check Failed",
+                    f"Unable to reach the update server (HTTP Error {status_code}). Check your network or firewall settings."))
+            except requests.exceptions.ConnectionError:
+                self.after(0, lambda: self.status_label.configure(
+                    text="❌ ERROR: Failed to check for update. Connection Refused.",
+                    text_color=self.DANGER_COLOR))
+                self.after(0, lambda: messagebox.showwarning(
+                    "Update Check Failed",
+                    "Cannot connect to the update server. Check your internet connection, firewall, or proxy."))
+            except requests.exceptions.Timeout:
+                self.after(0, lambda: self.status_label.configure(
+                    text="❌ ERROR: Failed to check for update. Connection Timed Out.",
+                    text_color=self.DANGER_COLOR))
+                self.after(0, lambda: messagebox.showwarning(
+                    "Update Check Failed",
+                    "The connection timed out while checking for updates. Your network might be slow or unstable."))
             except requests.exceptions.RequestException as e:
-                # print(f"Update check failed: {e}")
-                pass
-            except Exception as e:
-                # print(f"An unexpected error occurred during version check: {e}")
-                pass
+                self.after(0, lambda: self.status_label.configure(
+                    text=f"❌ ERROR: Failed to check for update. Details: {e.__class__.__name__}",
+                    text_color=self.DANGER_COLOR))
+                self.after(0, lambda: messagebox.showwarning(
+                    "Update Check Failed",
+                    f"An error occurred during update check: {e.__class__.__name__}. Check logs for details."))
+            except Exception:
+                # Catch all other unexpected errors
+                self.after(0, lambda: self.status_label.configure(
+                    text="❌ ERROR: An unexpected error occurred during version check.",
+                    text_color=self.DANGER_COLOR))
+                self.after(0, lambda: messagebox.showwarning(
+                    "Update Check Failed",
+                    "An unexpected error occurred during the version check."))
 
         update_thread = threading.Thread(target=_check_in_thread, daemon=True)
         update_thread.start()
@@ -353,7 +385,10 @@ class AdbControllerApp(ctk.CTk):
             self.update_app()
 
     def on_closing(self):
-        # ... (Existing implementation is fine)
+        # Cancel the periodic update check job
+        if self.update_check_job:
+            self.after_cancel(self.update_check_job)
+
         self.stop_capture()
         self.executor.shutdown(wait=False)
         self.destroy()
@@ -370,7 +405,7 @@ class AdbControllerApp(ctk.CTk):
                      font=ctk.CTkFont(size=20, weight="bold"),
                      text_color=self.ACCENT_COLOR).grid(row=0, column=0, pady=(15, 5), sticky="n")
 
-        about_text = f"""The "ADB TOOL BY: DARS" (v{__version__}) The Dars V3 Controller is a desktop application designed to simplify the management and control of multiple Android devices simultaneously It leverages the Android Debug Bridge (ADB) to send commands quickly and efficiently Through its simple interface you can perform various tasks such as tapping swiping and running specific commands on all connected devices at once
+        about_text = f"""The "ADB TOOL BY DARS:" (v{__version__}) is a desktop application designed to simplify the management and control of multiple Android devices simultaneously It leverages the Android Debug Bridge (ADB) to send commands quickly and efficiently Through its simple interface you can perform various tasks such as tapping swiping and running specific commands on all connected devices at once
 
 Getting Started
 Connect Your Devices Ensure USB Debugging is enabled on all Android devices you intend to use Then connect them to your computer using USB cables
@@ -866,13 +901,13 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
     # --- Existing Methods (Updated for Styling) ---
 
     def update_app(self):
-        # ... (Implementation remains the same, adjusted status text colors)
+        # Adjusted error handling in _update_in_thread for clarity
         def _update_in_thread():
             try:
                 self.status_label.configure(text="[SYS] Downloading latest version...", text_color=self.ACCENT_COLOR)
 
                 response = requests.get(UPDATE_URL)
-                response.raise_for_status()
+                response.raise_for_status()  # Raise HTTPError for bad status codes (4xx or 5xx)
 
                 desktop_path = Path.home() / "Desktop"
                 # Handle both frozen executable and script mode
@@ -880,9 +915,10 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
                 new_file_path = desktop_path / "main.py"
 
                 if old_file_path.name != "main.py":
+                    self.status_label.configure(text="❌ Update failed. Wrong executable name.",
+                                                text_color=self.DANGER_COLOR)
                     messagebox.showerror("Update Error",
                                          "Cannot update. The application is not running from the Desktop or its filename is not 'main.py'.")
-                    self.status_label.configure(text="❌ Update failed.", text_color=self.DANGER_COLOR)
                     return
 
                 with open(new_file_path, 'wb') as f:
@@ -895,14 +931,42 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
 
                 self.destroy()
 
+            except requests.exceptions.HTTPError as http_err:
+                status_code = http_err.response.status_code
+                self.after(0, lambda: self.status_label.configure(
+                    text=f"❌ ERROR: Update download failed. HTTP Status: {status_code}",
+                    text_color=self.DANGER_COLOR))
+                self.after(0, lambda: messagebox.showerror(
+                    "Update Download Failed",
+                    f"Failed to download update (HTTP Error {status_code}). Check if the update file exists at the URL."))
+            except requests.exceptions.ConnectionError:
+                self.after(0, lambda: self.status_label.configure(
+                    text="❌ ERROR: Update download failed. Connection Refused.",
+                    text_color=self.DANGER_COLOR))
+                self.after(0, lambda: messagebox.showerror(
+                    "Update Download Failed",
+                    "Failed to download update. Cannot connect to the server. Check your internet connection or firewall."))
+            except requests.exceptions.Timeout:
+                self.after(0, lambda: self.status_label.configure(
+                    text="❌ ERROR: Update download timed out.",
+                    text_color=self.DANGER_COLOR))
+                self.after(0, lambda: messagebox.showerror(
+                    "Update Download Failed",
+                    "Update download timed out. Your network might be slow or unstable."))
             except requests.exceptions.RequestException as e:
-                self.status_label.configure(text=f"❌ ERROR: Update download failed: {e}", text_color=self.DANGER_COLOR)
-                messagebox.showerror("Update Error",
-                                     f"Failed to download update. Check your internet connection.\nError: {e}")
+                self.after(0, lambda: self.status_label.configure(
+                    text=f"❌ ERROR: Update download failed. Details: {e.__class__.__name__}",
+                    text_color=self.DANGER_COLOR))
+                self.after(0, lambda: messagebox.showerror(
+                    "Update Download Failed",
+                    f"An error occurred during download: {e.__class__.__name__}. Check logs for details."))
             except Exception as e:
-                self.status_label.configure(text=f"❌ ERROR: An unexpected update error occurred: {e}",
-                                            text_color=self.DANGER_COLOR)
-                messagebox.showerror("Update Error", f"An unexpected error occurred.\nError: {e}")
+                self.after(0, lambda: self.status_label.configure(
+                    text=f"❌ ERROR: An unexpected update error occurred: {e}",
+                    text_color=self.DANGER_COLOR))
+                self.after(0, lambda: messagebox.showerror(
+                    "Update Error",
+                    f"An unexpected file operation error occurred.\nError: {e}"))
 
         update_thread = threading.Thread(target=_update_in_thread, daemon=True)
         update_thread.start()
@@ -1115,7 +1179,7 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
                 self.is_capturing = False
 
             # if self.is_capturing:
-                # time.sleep(0.05)  # Throttle screen capture rate
+            #     time.sleep(0.05)  # Throttle screen capture rate
 
     def update_image(self):
         # ... (Implementation remains the same, improved centering logic)
@@ -1225,11 +1289,11 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
         close_button.pack(side=tk.LEFT, padx=5)
 
         # Swipes are common actions, keep them here
-        scroll_down_button = ctk.CTkButton(button_frame, text="SCROLL UP",
+        scroll_down_button = ctk.CTkButton(button_frame, text="SCROLL DOWN",
                                            command=lambda: self.send_adb_swipe(serial, 'up'), **button_style)
         scroll_down_button.pack(side=tk.LEFT, padx=5)
 
-        scroll_up_button = ctk.CTkButton(button_frame, text="SCROLL DOWN",
+        scroll_up_button = ctk.CTkButton(button_frame, text="SCROLL UP",
                                          command=lambda: self.send_adb_swipe(serial, 'down'), **button_style)
         scroll_up_button.pack(side=tk.LEFT, padx=5)
 
@@ -1315,6 +1379,7 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
             effective_width = int(effective_height * image_aspect)
         else:
             effective_width = canvas_width
+            # FIX: Use effective_width (which is set to canvas_width) instead of the undefined new_width
             effective_height = int(effective_width / image_aspect)
 
         image_x_offset = (canvas_width - effective_width) // 2
@@ -1613,4 +1678,3 @@ if __name__ == '__main__':
     multiprocessing.freeze_support()
     app = AdbControllerApp()
     app.mainloop()
-#ok
