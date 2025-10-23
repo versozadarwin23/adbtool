@@ -12,6 +12,7 @@ import queue
 import random
 import concurrent.futures
 import requests
+import json
 from pathlib import Path
 import re
 import sys
@@ -19,7 +20,7 @@ import shutil
 import tempfile
 
 # --- App Version and Update URL ---
-__version__ = "1.3.4"  # Updated version number for GUI controls
+__version__ = "1.3.5"  # Updated version number
 UPDATE_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/main.py"
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/version.txt"
 
@@ -253,6 +254,7 @@ class AdbControllerApp(ctk.CTk):
         self.tab_view.add("YouTube")
         self.tab_view.add("Text Cmd")
         self.tab_view.add("Image")
+        self.tab_view.add("FB API")  # ADDED FB API TAB
         self.tab_view.set("ADB Utilities")  # Start on the utilities tab
 
         self._configure_tab_layouts()
@@ -376,7 +378,7 @@ class AdbControllerApp(ctk.CTk):
         title = "New ADB Commander Update!"
         message = (
             f"An improved version ({latest_version}) is now available!\n\n"
-            "This update contains the latest upgrades and performance improvements for faster and more reliable control of your devices.\n\n"
+            "New toggle airplane mode And Facebook share posts using Token This update contains the latest upgrades and performance improvements for faster and more reliable control of your devices.\n\n"
             "The app will close and restart to complete the update. Would you like to update now?"
         )
 
@@ -434,6 +436,7 @@ TikTok Open TikTok post URLs or launch/force-stop the TikTok Lite app
 YouTube Visit YouTube video URLs or launch/force-stop the YouTube app (using Chrome)
 Text Cmd Select a text file and send a random line of text to all devices You can also remove emojis from the selected file
 Image Enter the filename of an image in your phone's Download folder to share it via Facebook Lite
+FB API Use this tab to post text and links directly to Facebook using the Graph API (requires an Access Token file).
 Important Notes
 General Control All commands (except for taps swipes and long presses) are sent to all connected devices simultaneously
 Stop All Commands To halt any currently running commands click the Stop All Commands button
@@ -449,7 +452,7 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
         # --- ADB Utilities Tab (REFINED Minimalist Layout) ---
         utility_frame = self.tab_view.tab("ADB Utilities")
         utility_frame.columnconfigure(0, weight=1)
-        utility_frame.rowconfigure(11, weight=1)  # Keep last row empty for spacing
+        utility_frame.rowconfigure(13, weight=1)  # Increased row count for the new section
 
         # -----------------------------------------------------
         # Section 1: System Commands (Reboot/Shutdown)
@@ -475,15 +478,39 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
         shutdown_button.grid(row=0, column=1, sticky='ew', padx=(5, 10), pady=10)
 
         # -----------------------------------------------------
-        # Section 2: Brightness Control (All Devices)
+        # Section 2: Airplane Mode Control (NEW)
         # -----------------------------------------------------
-        ctk.CTkLabel(utility_frame, text="BRIGHTNESS [0-255]",
+        ctk.CTkLabel(utility_frame, text="AIRPLANE MODE",
                      font=ctk.CTkFont(size=16, weight="bold"), text_color=self.ACCENT_COLOR).grid(row=2, column=0,
                                                                                                   sticky='w', padx=15,
                                                                                                   pady=(10, 5))
 
+        airplane_mode_frame = ctk.CTkFrame(utility_frame, fg_color=self.FRAME_COLOR)
+        airplane_mode_frame.grid(row=3, column=0, sticky='ew', padx=15, pady=(5, 10))
+        airplane_mode_frame.columnconfigure(0, weight=1)
+        airplane_mode_frame.columnconfigure(1, weight=1)
+
+        enable_airplane_button = ctk.CTkButton(airplane_mode_frame, text="ENABLE AIRPLANE ✈️",
+                                               command=self.enable_airplane_mode,
+                                               fg_color="#3A3A3A", hover_color="#555555", corner_radius=8, height=40)
+        enable_airplane_button.grid(row=0, column=0, sticky='ew', padx=(10, 5), pady=10)
+
+        disable_airplane_button = ctk.CTkButton(airplane_mode_frame, text="DISABLE AIRPLANE 📶",
+                                                command=self.disable_airplane_mode,
+                                                fg_color=self.SUCCESS_COLOR, hover_color="#00A852", corner_radius=8,
+                                                height=40, text_color=self.BACKGROUND_COLOR)
+        disable_airplane_button.grid(row=0, column=1, sticky='ew', padx=(5, 10), pady=10)
+
+        # -----------------------------------------------------
+        # Section 3: Brightness Control (All Devices) (Shifted from row 2/3 to 4/5)
+        # -----------------------------------------------------
+        ctk.CTkLabel(utility_frame, text="BRIGHTNESS [0-255]",
+                     font=ctk.CTkFont(size=16, weight="bold"), text_color=self.ACCENT_COLOR).grid(row=4, column=0,
+                                                                                                  sticky='w', padx=15,
+                                                                                                  pady=(10, 5))
+
         brightness_frame = ctk.CTkFrame(utility_frame, fg_color=self.FRAME_COLOR)
-        brightness_frame.grid(row=3, column=0, sticky='ew', padx=15, pady=(5, 10))
+        brightness_frame.grid(row=5, column=0, sticky='ew', padx=15, pady=(5, 10))
         brightness_frame.columnconfigure(0, weight=1)
         brightness_frame.columnconfigure(1, weight=1)
         brightness_frame.columnconfigure(2, weight=1)
@@ -509,15 +536,15 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
                       text_color=self.BACKGROUND_COLOR).grid(row=1, column=2, padx=(5, 10), pady=(0, 10), sticky='ew')
 
         # -----------------------------------------------------
-        # Section 3: Volume Control (All Devices)
+        # Section 4: Volume Control (All Devices) (Shifted from row 4/5 to 6/7)
         # -----------------------------------------------------
         ctk.CTkLabel(utility_frame, text="VOLUME CONTROL",
-                     font=ctk.CTkFont(size=16, weight="bold"), text_color=self.ACCENT_COLOR).grid(row=4, column=0,
+                     font=ctk.CTkFont(size=16, weight="bold"), text_color=self.ACCENT_COLOR).grid(row=6, column=0,
                                                                                                   sticky='w', padx=15,
                                                                                                   pady=(10, 5))
 
         volume_frame = ctk.CTkFrame(utility_frame, fg_color=self.FRAME_COLOR)
-        volume_frame.grid(row=5, column=0, sticky='ew', padx=15, pady=(5, 10))
+        volume_frame.grid(row=7, column=0, sticky='ew', padx=15, pady=(5, 10))
         volume_frame.columnconfigure(0, weight=1)
         volume_frame.columnconfigure(1, weight=1)
         volume_frame.columnconfigure(2, weight=1)
@@ -536,19 +563,19 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
         self.mute_button.grid(row=0, column=2, padx=(5, 10), pady=10, sticky='ew')
 
         # -----------------------------------------------------
-        # Section 4: APK Installation
+        # Section 5: APK Installation (Shifted from row 6/7/8 to 8/9/10)
         # -----------------------------------------------------
         ctk.CTkLabel(utility_frame, text="APK INSTALLATION",
-                     font=ctk.CTkFont(size=16, weight="bold"), text_color=self.ACCENT_COLOR).grid(row=6, column=0,
+                     font=ctk.CTkFont(size=16, weight="bold"), text_color=self.ACCENT_COLOR).grid(row=8, column=0,
                                                                                                   sticky='w', padx=15,
                                                                                                   pady=(10, 5))
 
         self.apk_path_entry = ctk.CTkEntry(utility_frame, placeholder_text="Path: No APK selected...", height=35,
                                            corner_radius=8)
-        self.apk_path_entry.grid(row=7, column=0, sticky='ew', padx=15)
+        self.apk_path_entry.grid(row=9, column=0, sticky='ew', padx=15)
 
         apk_button_frame = ctk.CTkFrame(utility_frame, fg_color="transparent")
-        apk_button_frame.grid(row=8, column=0, sticky='ew', padx=15, pady=(5, 15))
+        apk_button_frame.grid(row=10, column=0, sticky='ew', padx=15, pady=(5, 15))
         apk_button_frame.columnconfigure(0, weight=1)
         apk_button_frame.columnconfigure(1, weight=1)
 
@@ -563,24 +590,24 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
         install_apk_button.grid(row=0, column=1, sticky='ew', padx=(5, 0))
 
         # -----------------------------------------------------
-        # Section 5: Custom Shell Command
+        # Section 6: Custom Shell Command (Shifted from row 9/10/11 to 11/12/13)
         # -----------------------------------------------------
         ctk.CTkLabel(utility_frame, text="CUSTOM SHELL COMMAND",
-                     font=ctk.CTkFont(size=16, weight="bold"), text_color=self.ACCENT_COLOR).grid(row=9, column=0,
+                     font=ctk.CTkFont(size=16, weight="bold"), text_color=self.ACCENT_COLOR).grid(row=11, column=0,
                                                                                                   sticky='w', padx=15,
                                                                                                   pady=(10, 5))
 
         self.custom_cmd_entry = ctk.CTkEntry(utility_frame,
                                              placeholder_text="Input arguments (e.g., input keyevent 3)...", height=35,
                                              corner_radius=8)
-        self.custom_cmd_entry.grid(row=10, column=0, sticky='ew', padx=15)
+        self.custom_cmd_entry.grid(row=12, column=0, sticky='ew', padx=15)
 
         run_custom_button = ctk.CTkButton(utility_frame, text="RUN COMMAND >",
                                           command=self.run_custom_shell_command,
                                           fg_color="#3A3A3A", hover_color="#555555", height=45,
                                           font=ctk.CTkFont(size=14, weight="bold"), text_color=self.ACCENT_COLOR,
                                           border_color=self.ACCENT_COLOR, border_width=1)
-        run_custom_button.grid(row=11, column=0, sticky='ew', padx=15, pady=(10, 15))
+        run_custom_button.grid(row=13, column=0, sticky='ew', padx=15, pady=(10, 15))
 
         # --- Remaining Tabs (Layout is also professionally refined) ---
 
@@ -730,7 +757,284 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
                                                 font=ctk.CTkFont(weight="bold"))
         self.share_image_button.grid(row=2, column=0, sticky='ew', padx=15, pady=(10, 15))
 
-    # --- New ADB Utility Methods ---
+        # FB API Tab (NEW)
+        fb_api_frame = self.tab_view.tab("FB API")
+        fb_api_frame.columnconfigure(0, weight=1)
+        fb_api_frame.rowconfigure(10, weight=1)
+
+        # -----------------------------------------------------
+        # Section 1: Access Token File
+        # -----------------------------------------------------
+        ctk.CTkLabel(fb_api_frame, text="FACEBOOK ACCESS TOKEN FILE (email|TOKEN or TOKEN)",
+                     font=ctk.CTkFont(size=14, weight="bold"), text_color=self.ACCENT_COLOR).grid(row=0, column=0,
+                                                                                                  sticky='w', padx=15,
+                                                                                                  pady=(15, 5))
+        self.fb_api_token_entry = ctk.CTkEntry(fb_api_frame, placeholder_text="Path: Select tokens file (.txt)...",
+                                               height=40, corner_radius=8)
+        self.fb_api_token_entry.grid(row=1, column=0, sticky='ew', padx=15)
+
+        browse_token_button = ctk.CTkButton(fb_api_frame, text="BROWSE TOKEN FILE 🔑", command=self.browse_token_file,
+                                            corner_radius=8, fg_color="#3A3A3A", hover_color="#555555", height=45)
+        browse_token_button.grid(row=2, column=0, sticky='ew', padx=15, pady=(10, 15))
+
+        # -----------------------------------------------------
+        # Section 2: Caption/Message File
+        # -----------------------------------------------------
+        ctk.CTkLabel(fb_api_frame, text="POST CAPTION/MESSAGE FILE (Random Line)",
+                     font=ctk.CTkFont(size=14, weight="bold"), text_color=self.ACCENT_COLOR).grid(row=3, column=0,
+                                                                                                  sticky='w', padx=15,
+                                                                                                  pady=(15, 5))
+        self.fb_api_message_file_entry = ctk.CTkEntry(fb_api_frame,
+                                                      placeholder_text="Path: Select caption file (.txt)...",
+                                                      height=40, corner_radius=8)
+        self.fb_api_message_file_entry.grid(row=4, column=0, sticky='ew', padx=15, pady=(0, 5))
+
+        browse_caption_button = ctk.CTkButton(fb_api_frame, text="BROWSE CAPTION FILE 💬",
+                                              command=self.browse_caption_file,
+                                              corner_radius=8, fg_color="#3A3A3A", hover_color="#555555", height=45)
+        browse_caption_button.grid(row=5, column=0, sticky='ew', padx=15, pady=(10, 15))
+
+        # -----------------------------------------------------
+        # Section 3: Link and Target ID
+        # -----------------------------------------------------
+        ctk.CTkLabel(fb_api_frame, text="LINK AND TARGET CONFIG (Optional)",
+                     font=ctk.CTkFont(size=14, weight="bold"), text_color=self.ACCENT_COLOR).grid(row=6, column=0,
+                                                                                                  sticky='w', padx=15,
+                                                                                                  pady=(10, 5))
+
+        self.fb_api_link_entry = ctk.CTkEntry(fb_api_frame, placeholder_text="Enter link URL to share (Optional)...",
+                                              height=40, corner_radius=8)
+        self.fb_api_link_entry.grid(row=7, column=0, sticky='ew', padx=15, pady=(0, 5))
+
+        self.fb_api_target_entry = ctk.CTkEntry(fb_api_frame, placeholder_text="Enter user ID or 'me' (Default: me)...",
+                                                height=40, corner_radius=8)
+        self.fb_api_target_entry.insert(0, 'me')
+        self.fb_api_target_entry.grid(row=8, column=0, sticky='ew', padx=15, pady=(5, 15))
+
+        # -----------------------------------------------------
+        # Section 4: Post Button
+        # -----------------------------------------------------
+        self.fb_api_post_button = ctk.CTkButton(fb_api_frame, text="POST TO FACEBOOK API (Using All Tokens) 🚀",
+                                                command=self.post_to_facebook_api,
+                                                fg_color="#1877f2", hover_color="#1651b7", height=55,
+                                                font=ctk.CTkFont(size=16, weight="bold"))
+        self.fb_api_post_button.grid(row=9, column=0, sticky='ew', padx=15, pady=(10, 15))
+
+    # --- New Facebook API Methods ---
+
+    def browse_token_file(self):
+        """Opens a file dialog to select the text file containing the Facebook Access Token(s)."""
+        file_path = filedialog.askopenfilename(
+            defaultextension=".txt",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
+        )
+        if file_path:
+            self.fb_api_token_entry.delete(0, tk.END)
+            self.fb_api_token_entry.insert(0, file_path)
+            self.status_label.configure(text=f"✅ TOKEN FILE SELECTED: {os.path.basename(file_path)}",
+                                        text_color=self.SUCCESS_COLOR)
+
+    def browse_caption_file(self):
+        """Opens a file dialog to select the text file containing the messages/captions."""
+        file_path = filedialog.askopenfilename(
+            defaultextension=".txt",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
+        )
+        if file_path:
+            self.fb_api_message_file_entry.delete(0, tk.END)
+            self.fb_api_message_file_entry.insert(0, file_path)
+            self.status_label.configure(text=f"✅ CAPTION FILE SELECTED: {os.path.basename(file_path)}",
+                                        text_color=self.SUCCESS_COLOR)
+
+    def post_to_facebook_api(self):
+        """Executes the Facebook Graph API post in a separate thread."""
+        token_file_path = self.fb_api_token_entry.get().strip()
+        caption_file_path = self.fb_api_message_file_entry.get().strip()
+        link_url = self.fb_api_link_entry.get().strip()
+        target_id = self.fb_api_target_entry.get().strip() or 'me'
+
+        if not token_file_path:
+            self.status_label.configure(text="⚠️ Please select an Access Token file.", text_color="#ffc107")
+            return
+
+        if not caption_file_path:
+            self.status_label.configure(text="⚠️ Please select a Caption/Message file.", text_color="#ffc107")
+            return
+
+        if not link_url and not caption_file_path:
+            self.status_label.configure(text="⚠️ Enter a Link URL or select a Caption file.", text_color="#ffc107")
+            return
+
+        # Start the API call in a thread to keep the GUI responsive
+        threading.Thread(target=self._threaded_post_api_call,
+                         args=(token_file_path, caption_file_path, link_url, target_id),
+                         daemon=True).start()
+
+    def _threaded_post_api_call(self, token_file_path, caption_file_path, link_url, target_id):
+        """
+        The actual network call logic executed in a thread.
+        Reads all tokens, reads all captions, loops through all tokens, and posts with a random caption.
+        """
+        self.after(0, lambda: self.status_label.configure(
+            text=f"[CMD] Preparing to post to {target_id}'s feed using tokens and captions...",
+            text_color=self.ACCENT_COLOR))
+
+        # 1. Read and Parse Access Tokens
+        valid_tokens = []
+        try:
+            with open(token_file_path, 'r', encoding='utf-8') as f:
+                raw_lines = f.readlines()
+
+            for line in raw_lines:
+                line = line.strip()
+                if not line:
+                    continue
+
+                # Check for 'email|TOKEN' format
+                if '|' in line:
+                    parts = line.split('|', 1)
+                    token = parts[1].strip()
+                else:
+                    # Assume the whole line is the token
+                    token = line
+
+                if token:
+                    valid_tokens.append(token)
+
+        except FileNotFoundError:
+            self.after(0, lambda: self.status_label.configure(
+                text="❌ ERROR: Token file not found.", text_color=self.DANGER_COLOR))
+            return
+        except Exception as e:
+            self.after(0, lambda: self.status_label.configure(
+                text=f"❌ ERROR reading token file: {e}", text_color=self.DANGER_COLOR))
+            return
+
+        if not valid_tokens:
+            self.after(0, lambda: self.status_label.configure(
+                text="❌ ERROR: No valid tokens found in the file.", text_color=self.DANGER_COLOR))
+            return
+
+        # 2. Read and Parse Captions/Messages
+        try:
+            with open(caption_file_path, 'r', encoding='utf-8') as f:
+                raw_lines = f.readlines()
+
+            clean_captions = [line.strip() for line in raw_lines if line.strip()]
+
+        except FileNotFoundError:
+            self.after(0, lambda: self.status_label.configure(
+                text="❌ ERROR: Caption file not found.", text_color=self.DANGER_COLOR))
+            return
+        except Exception as e:
+            self.after(0, lambda: self.status_label.configure(
+                text=f"❌ ERROR reading caption file: {e}", text_color=self.DANGER_COLOR))
+            return
+
+        if not clean_captions:
+            self.after(0, lambda: self.status_label.configure(
+                text="❌ ERROR: Caption file is empty.", text_color=self.DANGER_COLOR))
+            return
+
+        # 3. Post using all tokens with random captions
+        API_VERSION = 'v19.0'
+        url = f'https://graph.facebook.com/{API_VERSION}/{target_id}/feed'
+        success_count = 0
+
+        for i, access_token in enumerate(valid_tokens):
+            if is_stop_requested.is_set():
+                self.after(0, lambda: self.status_label.configure(
+                    text="🛑 Operation terminated by user.", text_color="#ffc107"))
+                break
+
+            # Choose a random message for the current token
+            random_message = random.choice(clean_captions)
+
+            # Use only a short snippet of the token for display (first 10 chars)
+            display_token_snippet = access_token[:10] + '...'
+            self.after(0, lambda msg=random_message: self.status_label.configure(
+                text=f"[{i + 1}/{len(valid_tokens)}] Posting (Token: {display_token_snippet}, Msg: '{msg[:20]}...')...",
+                text_color=self.ACCENT_COLOR))
+
+            payload = {
+                'message': random_message,
+                'link': link_url,
+                'access_token': access_token
+            }
+
+            # Remove empty parameters to avoid API errors
+            payload = {k: v for k, v in payload.items() if v}
+
+            # 4. Execute API Post for the current token
+            try:
+                response = requests.post(url, data=payload, timeout=20)
+                response_data = response.json()
+
+                if response.status_code == 200 and 'id' in response_data:
+                    post_id = response_data['id']
+                    success_count += 1
+                    # Update status in the main thread
+                    self.after(0, lambda post_id=post_id: self.status_label.configure(
+                        text=f"[{i + 1}/{len(valid_tokens)}] ✅ SUCCESS! Post ID: {post_id}",
+                        text_color=self.SUCCESS_COLOR))
+                else:
+                    error_detail = response_data.get('error', {}).get('message', 'Unknown API Error')
+                    error_code = response_data.get('error', {}).get('code', 'N/A')
+                    # Update status in the main thread
+                    self.after(0, lambda: self.status_label.configure(
+                        text=f"[{i + 1}/{len(valid_tokens)}] ❌ FAIL (Code {error_code}): {error_detail[:50]}...",
+                        text_color=self.DANGER_COLOR))
+
+            except requests.exceptions.RequestException as e:
+                # Update status in the main thread
+                self.after(0, lambda: self.status_label.configure(
+                    text=f"[{i + 1}/{len(valid_tokens)}] ❌ NETWORK ERROR: Failed to reach Facebook API.",
+                    text_color=self.DANGER_COLOR))
+
+            # Pause between posts to prevent rate-limiting (optional, but highly recommended)
+            time.sleep(2)  # 2-second delay between posts
+
+        final_message = f"✅ POSTING COMPLETE. Total successful posts: {success_count} / {len(valid_tokens)}"
+        self.after(0, lambda: self.status_label.configure(text=final_message, text_color=self.SUCCESS_COLOR))
+
+    # --- New ADB Utility Methods for Airplane Mode ---
+
+    def _threaded_airplane_mode(self, mode):
+        """Helper function to run airplane mode commands in a thread."""
+        if not self.devices:
+            self.after(0, lambda: self.status_label.configure(text="⚠️ No devices detected.", text_color="#ffc107"))
+            return
+
+        state = '1' if mode == 'enable' else '0'
+        name = 'ENABLE' if mode == 'enable' else 'DISABLE'
+
+        self.after(0, lambda: self.status_label.configure(
+            text=f"[CMD] Sending {name} AIRPLANE MODE command...", text_color=self.ACCENT_COLOR))
+
+        # 1. Set the system setting
+        set_cmd = ['shell', 'settings', 'put', 'global', 'airplane_mode_on', state]
+
+        # 2. Broadcast the change (crucial for it to take effect instantly)
+        broadcast_cmd = ['shell', 'am', 'broadcast', '-a', 'android.intent.action.AIRPLANE_MODE']
+
+        # Submit both commands for each device
+        for serial in self.devices:
+            # We don't wait for success/failure here as setting changes don't return meaningful output
+            self.executor.submit(run_adb_command, set_cmd, serial)
+            self.executor.submit(run_adb_command, broadcast_cmd, serial)
+
+        self.after(0, lambda: self.status_label.configure(
+            text=f"✅ AIRPLANE MODE {name} command sent to all devices.", text_color=self.SUCCESS_COLOR))
+
+    def enable_airplane_mode(self):
+        """Enables Airplane Mode on all connected devices."""
+        threading.Thread(target=self._threaded_airplane_mode, args=('enable',), daemon=True).start()
+
+    def disable_airplane_mode(self):
+        """Disables Airplane Mode on all connected devices."""
+        threading.Thread(target=self._threaded_airplane_mode, args=('disable',), daemon=True).start()
+
+    # --- Existing ADB Utility Methods ---
 
     def set_brightness(self, value):
         """Sets the screen brightness via ADB settings put command (0-255)."""
@@ -912,14 +1216,15 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
                 desktop_path = Path.home() / "Desktop"
                 # Handle both frozen executable and script mode
                 old_file_path = Path(sys.executable) if getattr(sys, 'frozen', False) else Path(sys.argv[0])
-                new_file_path = desktop_path / "main.py"
 
-                if old_file_path.name != "main.py":
-                    self.status_label.configure(text="❌ Update failed. Wrong executable name.",
-                                                text_color=self.DANGER_COLOR)
-                    messagebox.showerror("Update Error",
-                                         "Cannot update. The application is not running from the Desktop or its filename is not 'main.py'.")
-                    return
+                # Check if the app is run from a location we can write to and execute later
+                if not old_file_path.is_file():
+                    # If running from a temp location (like a frozen app not on desktop), default to desktop
+                    new_file_path = desktop_path / "adb_tool_by_dars.py"
+                elif old_file_path.suffix == '.py':
+                    new_file_path = old_file_path.parent / old_file_path.name
+                else:  # frozen executable
+                    new_file_path = desktop_path / old_file_path.name  # Replace the exe on the desktop
 
                 with open(new_file_path, 'wb') as f:
                     f.write(response.content)
@@ -1678,4 +1983,3 @@ if __name__ == '__main__':
     multiprocessing.freeze_support()
     app = AdbControllerApp()
     app.mainloop()
-
