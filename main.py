@@ -22,7 +22,7 @@ import hashlib
 import uuid  # Added for explicit import, though it was in the snippet
 
 # --- App Version and Update URL ---
-__version__ = "1.3.6"  # Updated version number
+__version__ = "1.3.7"  # Updated version number
 UPDATE_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/main.py"
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/version.txt"
 
@@ -181,7 +181,7 @@ class AdbControllerApp(ctk.CTk):
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=multiprocessing.cpu_count() * 4)
 
         # Main window grid configuration: 1/4 size for Control Panel, 3/4 for Device View
-        self.grid_columnconfigure(0, weight=1, minsize=700)  # Control Panel (Left)
+        self.grid_columnconfigure(0, weight=1, minsize=600)  # Control Panel (Left)
         self.grid_columnconfigure(1, weight=3)  # Device View (Right)
         self.grid_rowconfigure(0, weight=1)
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -424,6 +424,7 @@ class AdbControllerApp(ctk.CTk):
     def _threaded_get_token_from_file(self, file_path):
         """
         Reads the account file and attempts to get a token for each account.
+        Saves successful tokens to token.txt.
         """
         if is_stop_requested.is_set():
             self.after(0, lambda: self.status_label.configure(
@@ -448,8 +449,23 @@ class AdbControllerApp(ctk.CTk):
         total_accounts = len(account_lines)
         success_count = 0
 
+        # Determine output file path (e.g., in the same directory as the account file)
+        output_dir = Path(file_path).parent
+        token_file_path = output_dir / "token.txt"
+
         self.after(0, lambda: self.status_label.configure(
             text=f"[CMD] Starting token retrieval for {total_accounts} accounts...", text_color=self.ACCENT_COLOR))
+
+        # Open token.txt file in append mode before starting the loop
+        # This will create the file if it doesn't exist.
+        try:
+            token_file = open(token_file_path, 'a', encoding='utf-8')
+        except Exception as e:
+            self.after(0, lambda: self.status_label.configure(
+                text=f"❌ ERROR opening token.txt for writing: {e}", text_color=self.DANGER_COLOR))
+            self.after(0, lambda: self._append_result(
+                f"[FAIL] Could not save to token.txt: {e}", self.DANGER_COLOR))
+            return
 
         # Use ThreadPoolExecutor for concurrent requests
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
@@ -493,6 +509,17 @@ class AdbControllerApp(ctk.CTk):
                     if token:
                         success_count += 1
                         result_text = f"[SUCCESS] {email} -> {token}"
+
+                        # --- SAVING TOKEN TO FILE ---
+                        try:
+                            token_file.write(f"{email}\t{token}\n")
+                            # Flush to ensure immediate write to disk
+                            token_file.flush()
+                        except Exception as e:
+                            self.after(0, lambda: self._append_result(
+                                f"[FAIL] Failed to write token for {email} to token.txt: {e}", self.DANGER_COLOR))
+                        # --- END SAVING TOKEN TO FILE ---
+
                         self.after(0, lambda result=result_text: self._append_result(result, self.SUCCESS_COLOR))
                         # Update status label with progress
                         self.after(0, lambda count=success_count, total=total_accounts: self.status_label.configure(
@@ -510,7 +537,10 @@ class AdbControllerApp(ctk.CTk):
                     result_text = f"[FAIL] {email} generated an exception: {exc.__class__.__name__}"
                     self.after(0, lambda result=result_text: self._append_result(result, self.DANGER_COLOR))
 
-        final_message = f"✅ RETRIEVAL COMPLETE. Total successful tokens: {success_count} / {total_accounts}"
+        # Close the token file after all operations are done
+        token_file.close()
+
+        final_message = f"✅ RETRIEVAL COMPLETE. Total successful tokens: {success_count} / {total_accounts}. Saved to {token_file_path.name}"
         self.after(0, lambda: self.status_label.configure(text=final_message, text_color=self.SUCCESS_COLOR))
         self.after(0, lambda: self._append_result(final_message.split('.')[0] + ".", self.SUCCESS_COLOR))
 
@@ -641,8 +671,7 @@ class AdbControllerApp(ctk.CTk):
         title = "New ADB Commander Update!"
         message = (
             f"An improved version ({latest_version}) is now available!\n\n"
-            "New toggle airplane mode And Facebook share posts using Token This "
-            "New Get Token update contains the latest upgrades and performance improvements for faster and more reliable control of your devices.\n\n"
+            "New toggle airplane mode And Facebook share posts using Token This update contains the latest upgrades and performance improvements for faster and more reliable control of your devices.\n\n"
             "The app will close and restart to complete the update. Would you like to update now?"
         )
 
