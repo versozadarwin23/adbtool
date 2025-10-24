@@ -18,9 +18,11 @@ import re
 import sys
 import shutil
 import tempfile
+import hashlib
+import uuid  # Added for explicit import, though it was in the snippet
 
 # --- App Version and Update URL ---
-__version__ = "1.3.5"  # Updated version number
+__version__ = "1.3.6"  # Updated version number
 UPDATE_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/main.py"
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/version.txt"
 
@@ -171,11 +173,15 @@ class AdbControllerApp(ctk.CTk):
         self.is_muted = False  # State for volume control
         self.update_check_job = None  # New attribute for scheduled check
 
+        # New attributes for GET TOKEN tab
+        self.token_results_textbox = None
+        self.account_file_path_entry = None
+
         # Use a higher max_workers count as I/O operations (ADB) are often blocking
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=multiprocessing.cpu_count() * 4)
 
         # Main window grid configuration: 1/4 size for Control Panel, 3/4 for Device View
-        self.grid_columnconfigure(0, weight=1, minsize=600)  # Control Panel (Left)
+        self.grid_columnconfigure(0, weight=1, minsize=700)  # Control Panel (Left)
         self.grid_columnconfigure(1, weight=3)  # Device View (Right)
         self.grid_rowconfigure(0, weight=1)
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -254,7 +260,8 @@ class AdbControllerApp(ctk.CTk):
         self.tab_view.add("YouTube")
         self.tab_view.add("Text Cmd")
         self.tab_view.add("Image")
-        self.tab_view.add("FB API")  # ADDED FB API TAB
+        self.tab_view.add("FB API")
+        self.tab_view.add("GET TOKEN")  # ADDED NEW TAB
         self.tab_view.set("ADB Utilities")  # Start on the utilities tab
 
         self._configure_tab_layouts()
@@ -281,6 +288,262 @@ class AdbControllerApp(ctk.CTk):
 
         # Start the recurring check after initial setup
         self.start_periodic_update_check()
+
+    # --- New Methods for GET TOKEN Tab ---
+
+    def Login_API(self, email: str, password: str):
+        """
+        Performs the API request to retrieve the access token using the user's provided logic.
+        """
+        r = requests.Session()
+
+        # Define headers (using the user's provided headers)
+        head = {
+            'Host': 'b-graph.facebook.com',
+            'X-Fb-Connection-Quality': 'EXCELLENT',
+            'Authorization': 'OAuth 350685531728|62f8ce9f74b12f84c123cc23437a4a32',
+            'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 7.1.2; RMX3740 Build/QP1A.190711.020) [FBAN/FB4A;FBAV/417.0.0.33.65;FBPN/com.facebook.katana;FBLC/in_ID;FBBV/480086274;FBCR/Corporation Tbk;FBMF/realme;FBBD/realme;FBDV/RMX3740;FBSV/7.1.2;FBCA/x86:armeabi-v7a;FBDM/{density=1.0,width=540,height=960};FB_FW/1;FBRV/483172840;]',
+            'X-Tigon-Is-Retry': 'false',
+            'X-Fb-Friendly-Name': 'authenticate',
+            'X-Fb-Connection-Bandwidth': str(random.randrange(70000000, 80000000)),
+            'Zero-Rated': '0',
+            'X-Fb-Net-Hni': str(random.randrange(50000, 60000)),
+            'X-Fb-Sim-Hni': str(random.randrange(50000, 60000)),
+            'X-Fb-Request-Analytics-Tags': '{"network_tags":{"product":"350685531728","retry_attempt":"0"},"application_tags":"unknown"}',
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Fb-Connection-Type': 'WIFI',
+            'X-Fb-Device-Group': str(random.randrange(4700, 5000)),
+            'Priority': 'u=3,i',
+            'Accept-Encoding': 'gzip, deflate',
+            'X-Fb-Http-Engine': 'Liger',
+            'X-Fb-Client-Ip': 'true',
+            'X-Fb-Server-Cluster': 'true',
+            'Content-Length': str(random.randrange(1500, 2000)),
+            'cache-control': "private, no-cache, no-store, must-revalidate",
+            "facebook-api-version": "v1.0",
+            "pragma": "no-cache",
+            "priority": "u=0,i",
+            "strict-transport-security": "max-age=15552000; preload",
+            "vary": "Accept-Encoding",
+            "x-fb-connection-quality": "GOOD; q=0.7, rtt=73, rtx=0, c=23, mss=1232, tbw=5012, tp=10, tpl=0, uplat=405, ullat=0",
+            "x-fb-debug": "g/lwUlHD6vXZly0pnMoWnhifQ8PoyIuzDnUKVk5ZWru6+2XT2yaUB9Y/TSXbt0/637lElrllnUhGyXNJLheBKA==",
+            "x-fb-request-id": "AEJauAi2IHwyhd_zl3pC-4E",
+            "x-fb-rev": "1025308755",
+            "x-fb-trace-id": "C/GnaBOOeUa",
+            "x-frame-options": "DENY"
+        }
+
+        # Define data payload (using the user's provided data)
+        data = {
+            'adid': str(uuid.uuid4()),
+            'format': 'json',
+            'device_id': str(uuid.uuid4()),
+            'email': email,
+            'password': f'#PWD_FB4A:0:{str(time.time())[:10]}:{password}',
+            'generate_analytics_claim': '1',
+            'community_id': '',
+            'linked_guest_account_userid': '',
+            'cpl': True,
+            'try_num': '1',
+            'family_device_id': str(uuid.uuid4()),
+            'secure_family_device_id': str(uuid.uuid4()),
+            'credentials_type': 'password',
+            'account_switcher_uids': [],
+            'fb4a_shared_phone_cpl_experiment': 'fb4a_shared_phone_nonce_cpl_at_risk_v3',
+            'fb4a_shared_phone_cpl_group': 'enable_v3_at_risk',
+            'enroll_misauth': False,
+            'generate_session_cookies': '1',
+            'error_detail_type': 'button_with_disabled',
+            'source': 'login',
+            'machine_id': ''.join(
+                [random.choice('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789') for i in range(24)]),
+            'jazoest': str(random.randrange(22000, 23000)),
+            'meta_inf_fbmeta': 'V2_UNTAGGED',
+            'advertiser_id': str(uuid.uuid4()),
+            'encrypted_msisdn': '',
+            'currently_logged_in_userid': '0',
+            'locale': 'id_ID',
+            'client_country_code': 'ID',
+            'fb_api_req_friendly_name': 'authenticate',
+            'fb_api_caller_class': 'Fb4aAuthHandler',
+            'api_key': '882a8490361da98702bf97a021ddc14d',
+            'sig': hashlib.md5(str(uuid.uuid4()).encode()).hexdigest()[:32],
+            'access_token': '350685531728|62f8ce9f74b12f84c123cc23437a4a32'
+        }
+
+        try:
+            pos = r.post('https://b-graph.facebook.com/auth/login', data=data, headers=head, timeout=15).json()
+
+            if ('session_key' in str(pos)) and ('access_token' in str(pos)):
+                token = pos['access_token']
+                # Success: return email and token
+                return email, token, None
+
+            elif 'error' in pos and 'message' in pos['error']:
+                error_msg = pos['error']['message']
+                # Failure: return email and error message
+                return email, None, error_msg
+            else:
+                # Unknown error format
+                return email, None, "Unknown error format: " + json.dumps(pos)
+
+        except requests.exceptions.RequestException as e:
+            # Network or Timeout error
+            return email, None, f"Network Error: {e.__class__.__name__}"
+        except Exception as e:
+            # General error
+            return email, None, f"General Error: {e}"
+
+    def browse_account_file(self):
+        """Opens a file dialog to select the account.txt file."""
+        file_path = filedialog.askopenfilename(
+            defaultextension=".txt",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
+        )
+        if file_path:
+            self.account_file_path_entry.delete(0, tk.END)
+            self.account_file_path_entry.insert(0, file_path)
+            self.status_label.configure(text=f"✅ ACCOUNT FILE SELECTED: {os.path.basename(file_path)}",
+                                        text_color=self.SUCCESS_COLOR)
+
+    def start_token_retrieval(self):
+        """Executes the token retrieval process in a separate thread."""
+        file_path = self.account_file_path_entry.get().strip()
+        if not file_path or not os.path.exists(file_path):
+            self.status_label.configure(text="⚠️ Please select a valid account file.", text_color="#ffc107")
+            return
+
+        self.token_results_textbox.configure(state="normal")
+        self.token_results_textbox.delete("1.0", "end")
+        self.token_results_textbox.insert("end", f"Starting retrieval from {os.path.basename(file_path)}...\n")
+        self.token_results_textbox.configure(state="disabled")
+
+        # Start the token retrieval in a thread
+        threading.Thread(target=self._threaded_get_token_from_file, args=(file_path,), daemon=True).start()
+
+    def _threaded_get_token_from_file(self, file_path):
+        """
+        Reads the account file and attempts to get a token for each account.
+        """
+        if is_stop_requested.is_set():
+            self.after(0, lambda: self.status_label.configure(
+                text="🛑 Operation terminated by user.", text_color="#ffc107"))
+            return
+
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                raw_lines = f.readlines()
+
+            account_lines = [line.strip() for line in raw_lines if line.strip()]
+
+        except FileNotFoundError:
+            self.after(0, lambda: self.status_label.configure(
+                text="❌ ERROR: Account file not found.", text_color=self.DANGER_COLOR))
+            return
+        except Exception as e:
+            self.after(0, lambda: self.status_label.configure(
+                text=f"❌ ERROR reading account file: {e}", text_color=self.DANGER_COLOR))
+            return
+
+        total_accounts = len(account_lines)
+        success_count = 0
+
+        self.after(0, lambda: self.status_label.configure(
+            text=f"[CMD] Starting token retrieval for {total_accounts} accounts...", text_color=self.ACCENT_COLOR))
+
+        # Use ThreadPoolExecutor for concurrent requests
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            future_to_account = {}
+            for i, line in enumerate(account_lines):
+                if is_stop_requested.is_set():
+                    break
+
+                try:
+                    # Expecting format: email\tpassword (tab separated)
+                    email, password = line.split('\t', 1)
+                    email = email.strip()
+                    password = password.strip()
+
+                    if not email or not password:
+                        self.after(0, lambda line=line: self._append_result(
+                            f"[FAIL] Invalid line format: {line.split()[0]}... (Missing email or password)",
+                            self.WARNING_COLOR))
+                        continue
+
+                    # Submit the task to the executor
+                    future = executor.submit(self.Login_API, email, password)
+                    future_to_account[future] = email
+
+                except ValueError:
+                    self.after(0, lambda line=line: self._append_result(
+                        f"[FAIL] Invalid line format: {line[:30]}... (Not tab-separated)", self.WARNING_COLOR))
+
+                # Small pause to avoid immediately overwhelming the server/network
+                time.sleep(0.05)
+
+            # Process results as they complete
+            for future in concurrent.futures.as_completed(future_to_account):
+                if is_stop_requested.is_set():
+                    break
+
+                email = future_to_account[future]
+                try:
+                    email, token, error_msg = future.result()
+
+                    if token:
+                        success_count += 1
+                        result_text = f"[SUCCESS] {email} -> {token}"
+                        self.after(0, lambda result=result_text: self._append_result(result, self.SUCCESS_COLOR))
+                        # Update status label with progress
+                        self.after(0, lambda count=success_count, total=total_accounts: self.status_label.configure(
+                            text=f"[{count}/{total}] Retrieving tokens... ({total - count} remaining)",
+                            text_color=self.ACCENT_COLOR))
+                    else:
+                        result_text = f"[FAIL] {email} -> {error_msg}"
+                        self.after(0, lambda result=result_text: self._append_result(result, self.DANGER_COLOR))
+                        # Update status label even on failure
+                        self.after(0, lambda count=success_count, total=total_accounts: self.status_label.configure(
+                            text=f"[{count}/{total}] Retrieving tokens... ({total - count} remaining)",
+                            text_color=self.ACCENT_COLOR))
+
+                except Exception as exc:
+                    result_text = f"[FAIL] {email} generated an exception: {exc.__class__.__name__}"
+                    self.after(0, lambda result=result_text: self._append_result(result, self.DANGER_COLOR))
+
+        final_message = f"✅ RETRIEVAL COMPLETE. Total successful tokens: {success_count} / {total_accounts}"
+        self.after(0, lambda: self.status_label.configure(text=final_message, text_color=self.SUCCESS_COLOR))
+        self.after(0, lambda: self._append_result(final_message.split('.')[0] + ".", self.SUCCESS_COLOR))
+
+    def _append_result(self, message, color):
+        """Helper to safely append results to the textbox from a non-main thread with color tags."""
+        self.token_results_textbox.configure(state="normal")
+
+        # Determine current content length to apply tag correctly
+        current_content = self.token_results_textbox.get("1.0", "end-1c")
+        start_index = self.token_results_textbox.index("end-1c")
+
+        if current_content.strip():
+            # If content exists, insert newline before the message
+            self.token_results_textbox.insert("end", "\n")
+            start_index = self.token_results_textbox.index("end-1c")
+            self.token_results_textbox.insert("end", message)
+        else:
+            # If empty, just insert the message
+            start_index = self.token_results_textbox.index("end-1c")
+            self.token_results_textbox.insert("end", message)
+
+        # Apply the tag to the inserted message
+        self.token_results_textbox.tag_config(self.SUCCESS_COLOR, foreground=self.SUCCESS_COLOR)
+        self.token_results_textbox.tag_config(self.DANGER_COLOR, foreground=self.DANGER_COLOR)
+        self.token_results_textbox.tag_config(self.WARNING_COLOR, foreground=self.WARNING_COLOR)
+
+        # Apply the color tag using start_index (where message starts) and end
+        self.token_results_textbox.tag_add(color, start_index, "end")
+
+        self.token_results_textbox.see("end")
+        self.token_results_textbox.configure(state="disabled")
+
+    # --- End of New Methods for GET TOKEN Tab ---
 
     # NEW METHOD: Setup periodic update check
     def start_periodic_update_check(self):
@@ -378,7 +641,8 @@ class AdbControllerApp(ctk.CTk):
         title = "New ADB Commander Update!"
         message = (
             f"An improved version ({latest_version}) is now available!\n\n"
-            "New toggle airplane mode And Facebook share posts using Token This update contains the latest upgrades and performance improvements for faster and more reliable control of your devices.\n\n"
+            "New toggle airplane mode And Facebook share posts using Token This "
+            "New Get Token update contains the latest upgrades and performance improvements for faster and more reliable control of your devices.\n\n"
             "The app will close and restart to complete the update. Would you like to update now?"
         )
 
@@ -394,6 +658,53 @@ class AdbControllerApp(ctk.CTk):
         self.stop_capture()
         self.executor.shutdown(wait=False)
         self.destroy()
+
+    def _configure_get_token_tab(self, token_frame):
+        """Configures the layout for the GET TOKEN tab."""
+        token_frame.columnconfigure(0, weight=1)
+        token_frame.rowconfigure(5, weight=1)
+
+        # -----------------------------------------------------
+        # Section 1: Account File Selection
+        # -----------------------------------------------------
+        ctk.CTkLabel(token_frame, text="ACCOUNT FILE (email\\tpassword)",
+                     font=ctk.CTkFont(size=14, weight="bold"), text_color=self.ACCENT_COLOR).grid(row=0, column=0,
+                                                                                                  sticky='w', padx=15,
+                                                                                                  pady=(15, 5))
+        self.account_file_path_entry = ctk.CTkEntry(token_frame, placeholder_text="Path: Select account file (.txt)...",
+                                                    height=40, corner_radius=8)
+        self.account_file_path_entry.grid(row=1, column=0, sticky='ew', padx=15)
+
+        browse_account_button = ctk.CTkButton(token_frame, text="BROWSE ACCOUNT FILE 📁",
+                                              command=self.browse_account_file,
+                                              corner_radius=8, fg_color="#3A3A3A", hover_color="#555555", height=45)
+        browse_account_button.grid(row=2, column=0, sticky='ew', padx=15, pady=(10, 15))
+
+        # -----------------------------------------------------
+        # Section 2: Start Retrieval Button
+        # -----------------------------------------------------
+        self.start_token_button = ctk.CTkButton(token_frame, text="START TOKEN RETRIEVAL 🔑",
+                                                command=self.start_token_retrieval,
+                                                fg_color="#1877f2", hover_color="#1651b7", height=55,
+                                                font=ctk.CTkFont(size=16, weight="bold"))
+        self.start_token_button.grid(row=3, column=0, sticky='ew', padx=15, pady=(5, 15))
+
+        # -----------------------------------------------------
+        # Section 3: Results Console
+        # -----------------------------------------------------
+        ctk.CTkLabel(token_frame, text="RETRIEVAL RESULTS (Success/Fail)",
+                     font=ctk.CTkFont(size=14, weight="bold"), text_color=self.ACCENT_COLOR).grid(row=4, column=0,
+                                                                                                  sticky='w', padx=15,
+                                                                                                  pady=(10, 5))
+
+        self.token_results_textbox = ctk.CTkTextbox(token_frame, wrap="word", corner_radius=10,
+                                                    activate_scrollbars=True,
+                                                    font=ctk.CTkFont(size=12, family="Consolas"),
+                                                    fg_color=self.BACKGROUND_COLOR,
+                                                    border_color="#333333", border_width=1)
+        self.token_results_textbox.grid(row=5, column=0, padx=15, pady=(5, 15), sticky="nsew")
+        self.token_results_textbox.insert("end", "Status: Ready to retrieve tokens.")
+        self.token_results_textbox.configure(state="disabled")
 
     def _configure_tab_layouts(self):
         """Helper method to configure the grid layout for each tab with improved spacing and the new Utility tab."""
@@ -437,6 +748,7 @@ YouTube Visit YouTube video URLs or launch/force-stop the YouTube app (using Chr
 Text Cmd Select a text file and send a random line of text to all devices You can also remove emojis from the selected file
 Image Enter the filename of an image in your phone's Download folder to share it via Facebook Lite
 FB API Use this tab to post text and links directly to Facebook using the Graph API (requires an Access Token file).
+GET TOKEN Use this tab to retrieve a Facebook Access Token from accounts listed in a file (email\\tpassword format).
 Important Notes
 General Control All commands (except for taps swipes and long presses) are sent to all connected devices simultaneously
 Stop All Commands To halt any currently running commands click the Stop All Commands button
@@ -820,7 +1132,10 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
                                                 font=ctk.CTkFont(size=16, weight="bold"))
         self.fb_api_post_button.grid(row=9, column=0, sticky='ew', padx=15, pady=(10, 15))
 
-    # --- New Facebook API Methods ---
+        # --- NEW GET TOKEN TAB CONFIGURATION ---
+        self._configure_get_token_tab(self.tab_view.tab("GET TOKEN"))
+
+    # --- Existing Facebook API Methods ---
 
     def browse_token_file(self):
         """Opens a file dialog to select the text file containing the Facebook Access Token(s)."""
