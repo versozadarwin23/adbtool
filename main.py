@@ -20,9 +20,10 @@ import shutil
 import tempfile
 import hashlib
 import uuid  # Added for explicit import, though it was in the snippet
+import xml.etree.ElementTree as ET  # For XML parsing
 
 # --- App Version and Update URL ---
-__version__ = "1.3.7"  # Updated version number
+__version__ = "1.3.8"  # Updated version number
 UPDATE_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/main.py"
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/version.txt"
 
@@ -94,26 +95,19 @@ def run_text_command(text_to_send, serial):
         # print(f"Text is empty. Cannot send command to {serial}.")
         return
 
-    for char in text_to_send:
-        if is_stop_requested.is_set():
-            # print(f"🛑 Stop signal received. Aborting text command on device {serial}.")
-            return
+    # Replace spaces with %s for ADB
+    # ADB shell input text handles quotes, so we'll wrap the whole thing
+    # This is often more reliable than char-by-char for long text
+    formatted_text = text_to_send.replace(" ", "%s")
 
-        try:
-            # Send char-by-char for better simulation fidelity, but synchronously for faster thread pool execution
-            encoded_char = char.replace(' ', '%s')
-            command = ['shell', 'input', 'text', encoded_char]
+    try:
+        command = ['shell', 'input', 'text', formatted_text]
+        subprocess.run(['adb', '-s', serial] + command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       check=True, timeout=15)
 
-            # Synchronous execution of single character to avoid excessive thread submission
-            subprocess.run(['adb', '-s', serial] + command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                           check=True, timeout=5)
-
-        except subprocess.CalledProcessError:
-            # Ignore minor char errors
-            pass
-        except Exception as e:
-            # print(f"An error occurred on device {serial}: {e}")
-            break
+    except Exception as e:
+        # print(f"An error occurred on device {serial}: {e}")
+        pass
 
 
 def create_and_run_updater_script(new_file_path, old_file_path):
@@ -176,6 +170,9 @@ class AdbControllerApp(ctk.CTk):
         # New attributes for GET TOKEN tab
         self.token_results_textbox = None
         self.account_file_path_entry = None
+
+        # --- NEW: State for auto-typing loop ---
+        self.is_auto_typing = threading.Event()
 
         # Use a higher max_workers count as I/O operations (ADB) are often blocking
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=multiprocessing.cpu_count() * 4)
@@ -258,11 +255,11 @@ class AdbControllerApp(ctk.CTk):
         self.tab_view.add("FB Lite")
         self.tab_view.add("TikTok")
         self.tab_view.add("YouTube")
-        self.tab_view.add("Text Cmd")
+        # self.tab_view.add("Text Cmd") # REMOVED
         self.tab_view.add("Image")
         self.tab_view.add("FB API")
         self.tab_view.add("GET TOKEN")  # ADDED NEW TAB
-        self.tab_view.set("ADB Utilities")  # Start on the utilities tab
+        self.tab_view.set("FB Lite")  # Start on the FB Lite tab
 
         self._configure_tab_layouts()
 
@@ -671,7 +668,7 @@ class AdbControllerApp(ctk.CTk):
         title = "New ADB Commander Update!"
         message = (
             f"An improved version ({latest_version}) is now available!\n\n"
-            "New toggle airplane mode And Facebook share posts using Token This update contains the latest upgrades and performance improvements for faster and more reliable control of your devices.\n\n"
+            "New Auto Click what's on your mind Auto Type caption This update contains the latest upgrades and performance improvements for faster and more reliable control of your devices.\n\n"
             "The app will close and restart to complete the update. Would you like to update now?"
         )
 
@@ -683,6 +680,10 @@ class AdbControllerApp(ctk.CTk):
         # Cancel the periodic update check job
         if self.update_check_job:
             self.after_cancel(self.update_check_job)
+
+        # Stop all threads
+        self.is_auto_typing.clear()
+        is_stop_requested.set()
 
         self.stop_capture()
         self.executor.shutdown(wait=False)
@@ -771,10 +772,9 @@ Scroll Down/Up Scrolls the screen up or down
 Additional Features (Tab View)
 The left-side panel features a Tab View with various command categories
 
-FB Lite Use this tab to open Facebook posts share links or launch/force-stop the Facebook Lite app
+FB Lite Use this tab to open Facebook posts share links or launch/force-stop the Facebook Lite app. This tab now also includes Text Command functions.
 TikTok Open TikTok post URLs or launch/force-stop the TikTok Lite app
 YouTube Visit YouTube video URLs or launch/force-stop the YouTube app (using Chrome)
-Text Cmd Select a text file and send a random line of text to all devices You can also remove emojis from the selected file
 Image Enter the filename of an image in your phone's Download folder to share it via Facebook Lite
 FB API Use this tab to post text and links directly to Facebook using the Graph API (requires an Access Token file).
 GET TOKEN Use this tab to retrieve a Facebook Access Token from accounts listed in a file (email\\tpassword format).
@@ -955,29 +955,14 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
         # Facebook Lite Tab
         fb_frame = self.tab_view.tab("FB Lite")
         fb_frame.columnconfigure(0, weight=1)
-        fb_frame.rowconfigure(6, weight=1)
+        # fb_frame.rowconfigure(6, weight=1) # Removed fixed row config to allow expansion
 
-        ctk.CTkLabel(fb_frame, text="FACEBOOK POST URL", font=ctk.CTkFont(size=14, weight="bold")).grid(
+        # --- FB Lite App Controls ---
+        ctk.CTkLabel(fb_frame, text="FB LITE APP CONTROL", font=ctk.CTkFont(size=14, weight="bold")).grid(
             row=0, column=0, sticky='w', padx=15, pady=(15, 5))
-        self.fb_url_entry = ctk.CTkEntry(fb_frame, placeholder_text="Enter Facebook URL...", height=40, corner_radius=8)
-        self.fb_url_entry.grid(row=1, column=0, sticky='ew', padx=15, pady=0)
-        self.fb_button = ctk.CTkButton(fb_frame, text="VISIT POST", command=self.open_fb_lite_deeplink,
-                                       fg_color="#1877f2", hover_color="#1651b7", height=45,
-                                       font=ctk.CTkFont(weight="bold"))
-        self.fb_button.grid(row=2, column=0, sticky='ew', padx=15, pady=10)
-
-        ctk.CTkLabel(fb_frame, text="LINK TO SHARE", font=ctk.CTkFont(size=14, weight="bold")).grid(
-            row=3, column=0, sticky='w', pady=(15, 5), padx=15)
-        self.fb_share_url_entry = ctk.CTkEntry(fb_frame, placeholder_text="Enter link to share...", height=40,
-                                               corner_radius=8)
-        self.fb_share_url_entry.grid(row=4, column=0, sticky='ew', padx=15, pady=0)
-        self.share_button = ctk.CTkButton(fb_frame, text="SHARE POST", command=self.share_fb_lite_deeplink,
-                                          fg_color="#42b72a", hover_color="#369720", height=45,
-                                          font=ctk.CTkFont(weight="bold"))
-        self.share_button.grid(row=5, column=0, sticky='ew', padx=15, pady=10)
 
         fb_launch_frame = ctk.CTkFrame(fb_frame, fg_color="transparent")
-        fb_launch_frame.grid(row=6, column=0, sticky='ew', padx=15, pady=(20, 15))
+        fb_launch_frame.grid(row=1, column=0, sticky='ew', padx=15, pady=(0, 10))
         fb_launch_frame.columnconfigure(0, weight=1)
         fb_launch_frame.columnconfigure(1, weight=1)
         self.launch_fb_lite_button = ctk.CTkButton(fb_launch_frame, text="Launch FB Lite", command=self.launch_fb_lite,
@@ -988,6 +973,72 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
                                                        hover_color="#CC4028", corner_radius=8,
                                                        text_color=self.ACCENT_COLOR)
         self.force_stop_fb_lite_button.grid(row=0, column=1, sticky='ew', padx=(5, 0))
+
+        # --- FB Lite URL Controls ---
+        ctk.CTkLabel(fb_frame, text="FACEBOOK POST URL", font=ctk.CTkFont(size=14, weight="bold")).grid(
+            row=2, column=0, sticky='w', padx=15, pady=(15, 5))
+        self.fb_url_entry = ctk.CTkEntry(fb_frame, placeholder_text="Enter Facebook URL...", height=40, corner_radius=8)
+        self.fb_url_entry.grid(row=3, column=0, sticky='ew', padx=15, pady=0)
+        self.fb_button = ctk.CTkButton(fb_frame, text="VISIT POST", command=self.open_fb_lite_deeplink,
+                                       fg_color="#1877f2", hover_color="#1651b7", height=45,
+                                       font=ctk.CTkFont(weight="bold"))
+        self.fb_button.grid(row=4, column=0, sticky='ew', padx=15, pady=10)
+
+        ctk.CTkLabel(fb_frame, text="LINK TO SHARE", font=ctk.CTkFont(size=14, weight="bold")).grid(
+            row=5, column=0, sticky='w', pady=(15, 5), padx=15)
+        self.fb_share_url_entry = ctk.CTkEntry(fb_frame, placeholder_text="Enter link to share...", height=40,
+                                               corner_radius=8)
+        self.fb_share_url_entry.grid(row=6, column=0, sticky='ew', padx=15, pady=0)
+        self.share_button = ctk.CTkButton(fb_frame, text="SHARE POST", command=self.share_fb_lite_deeplink,
+                                          fg_color="#42b72a", hover_color="#369720", height=45,
+                                          font=ctk.CTkFont(weight="bold"))
+        self.share_button.grid(row=7, column=0, sticky='ew', padx=15, pady=10)
+
+        # --- Separator ---
+        ctk.CTkFrame(fb_frame, height=1, fg_color=self.ACCENT_COLOR).grid(row=8, column=0,
+                                                                          sticky='ew',
+                                                                          padx=15, pady=15)
+
+        # --- Text Command Section (Moved from 'Text Cmd' Tab) ---
+        ctk.CTkLabel(fb_frame, text="TEXT COMMAND FROM FILE", font=ctk.CTkFont(size=14, weight="bold")).grid(row=9,
+                                                                                                             column=0,
+                                                                                                             sticky='w',
+                                                                                                             pady=(
+                                                                                                             0, 5),
+                                                                                                             padx=15)
+        self.file_path_entry = ctk.CTkEntry(fb_frame, placeholder_text="Path: Select a text file...", height=40,
+                                            corner_radius=8)
+        self.file_path_entry.grid(row=10, column=0, sticky='ew', padx=15)
+        browse_button = ctk.CTkButton(fb_frame, text="BROWSE TXT", command=self.browse_file, corner_radius=8,
+                                      fg_color="#3A3A3A", hover_color="#555555")
+        browse_button.grid(row=11, column=0, sticky='ew', padx=15, pady=(10, 10))
+
+        # --- Text Command Buttons Frame ---
+        text_buttons_frame = ctk.CTkFrame(fb_frame, fg_color="transparent")
+        text_buttons_frame.grid(row=12, column=0, sticky='ew', padx=15, pady=0)
+        text_buttons_frame.columnconfigure(0, weight=1)
+        text_buttons_frame.columnconfigure(1, weight=1)
+
+        self.send_button = ctk.CTkButton(text_buttons_frame, text="SEND RANDOM TEXT ✉️",
+                                         command=self.send_text_to_devices,
+                                         fg_color=self.SUCCESS_COLOR, hover_color="#00A852", height=45,
+                                         font=ctk.CTkFont(weight="bold"), text_color=self.BACKGROUND_COLOR)
+        self.send_button.grid(row=0, column=0, sticky='ew', padx=(0, 5), pady=(5, 5))
+
+        self.remove_emoji_button = ctk.CTkButton(text_buttons_frame, text="REMOVE EMOJIS 🚫",
+                                                 command=self.remove_emojis_from_file,
+                                                 fg_color=self.WARNING_COLOR, hover_color="#CC8400", height=45,
+                                                 font=ctk.CTkFont(weight="bold"), text_color=self.BACKGROUND_COLOR)
+        self.remove_emoji_button.grid(row=0, column=1, sticky='ew', padx=(5, 0), pady=(5, 5))
+
+        # --- MODIFIED "Find, Click & Type" Button to "START AUTO-TYPE" ---
+        self.find_click_type_button = ctk.CTkButton(fb_frame, text="START AUTO-TYPE ⌨️",
+                                                    command=self.toggle_auto_type_loop,
+                                                    fg_color="#3A3A3A", hover_color="#555555", height=45,
+                                                    font=ctk.CTkFont(size=14, weight="bold"),
+                                                    text_color=self.ACCENT_COLOR,
+                                                    border_color=self.ACCENT_COLOR, border_width=1)
+        self.find_click_type_button.grid(row=13, column=0, sticky='ew', padx=15, pady=(10, 15))
 
         # TikTok Tab
         tiktok_frame = self.tab_view.tab("TikTok")
@@ -1052,34 +1103,7 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
                                                        text_color=self.ACCENT_COLOR)
         self.force_stop_youtube_button.grid(row=0, column=1, sticky='ew', padx=(5, 0))
 
-        # Text Command Tab
-        text_frame = self.tab_view.tab("Text Cmd")
-        text_frame.columnconfigure(0, weight=1)
-        text_frame.rowconfigure(4, weight=1)
-
-        ctk.CTkLabel(text_frame, text="TEXT COMMAND FROM FILE", font=ctk.CTkFont(size=14, weight="bold")).grid(row=0,
-                                                                                                               column=0,
-                                                                                                               sticky='w',
-                                                                                                               pady=(
-                                                                                                                   15,
-                                                                                                                   5),
-                                                                                                               padx=15)
-        self.file_path_entry = ctk.CTkEntry(text_frame, placeholder_text="Path: Select a text file...", height=40,
-                                            corner_radius=8)
-        self.file_path_entry.grid(row=1, column=0, sticky='ew', padx=15)
-        browse_button = ctk.CTkButton(text_frame, text="BROWSE TXT", command=self.browse_file, corner_radius=8,
-                                      fg_color="#3A3A3A", hover_color="#555555")
-        browse_button.grid(row=2, column=0, sticky='ew', padx=15, pady=(10, 10))
-        self.send_button = ctk.CTkButton(text_frame, text="SEND RANDOM TEXT ✉️", command=self.send_text_to_devices,
-                                         fg_color=self.SUCCESS_COLOR, hover_color="#00A852", height=45,
-                                         font=ctk.CTkFont(weight="bold"), text_color=self.BACKGROUND_COLOR)
-        self.send_button.grid(row=3, column=0, sticky='ew', padx=15, pady=(5, 5))
-
-        self.remove_emoji_button = ctk.CTkButton(text_frame, text="REMOVE EMOJIS 🚫",
-                                                 command=self.remove_emojis_from_file,
-                                                 fg_color=self.WARNING_COLOR, hover_color="#CC8400", height=45,
-                                                 font=ctk.CTkFont(weight="bold"), text_color=self.BACKGROUND_COLOR)
-        self.remove_emoji_button.grid(row=4, column=0, sticky='ew', padx=15, pady=(5, 15))
+        # Text Command Tab - REMOVED
 
         # Image Tab
         image_frame = self.tab_view.tab("Image")
@@ -1632,6 +1656,11 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
             self.status_label.configure(text=f"✅ FILE SELECTED: {os.path.basename(file_path)}",
                                         text_color=self.SUCCESS_COLOR)
 
+            # --- MODIFICATION ---
+            # Automatically stop any running loop if a new file is selected
+            if self.is_auto_typing.is_set():
+                self.toggle_auto_type_loop()
+
     def _threaded_send_text(self):
         # ... (Implementation remains the same, adjusted status text colors)
         file_path = self.file_path_entry.get()
@@ -1673,6 +1702,209 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
     def send_text_to_devices(self):
         send_thread = threading.Thread(target=self._threaded_send_text, daemon=True)
         send_thread.start()
+
+    # --- NEW METHOD: Toggles the auto-type loop ---
+    def toggle_auto_type_loop(self):
+        """
+        Toggles the 'while true' loop for finding, clicking, and typing.
+        """
+        if self.is_auto_typing.is_set():
+            # --- STOP THE LOOP ---
+            self.is_auto_typing.clear()
+            self.find_click_type_button.configure(text="START AUTO-TYPE ⌨️",
+                                                  fg_color="#3A3A3A",
+                                                  hover_color="#555555")
+            self.status_label.configure(text="[CMD] Stopping auto-type loop...", text_color=self.WARNING_COLOR)
+            return
+
+        # --- START THE LOOP ---
+        file_path = self.file_path_entry.get()
+        if not file_path:
+            self.status_label.configure(text="⚠️ Please select a text file first.", text_color="#ffc107")
+            return
+
+        if not self.devices:
+            self.status_label.configure(text="⚠️ No devices detected.", text_color="#ffc107")
+            return
+
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            clean_lines = [line.strip() for line in lines if line.strip()]
+            if not clean_lines:
+                self.status_label.configure(text="⚠️ Text file is empty.", text_color="#ffc107")
+                return
+        except FileNotFoundError:
+            self.status_label.configure(text="❌ ERROR: Text file not found.", text_color=self.DANGER_COLOR)
+            return
+        except Exception as e:
+            self.status_label.configure(text=f"❌ ERROR: Reading file: {e}", text_color=self.DANGER_COLOR)
+            return
+
+        # Set the flag
+        self.is_auto_typing.set()
+
+        # Update button to be a STOP button
+        self.find_click_type_button.configure(text="STOP AUTO-TYPE 🛑",
+                                              fg_color=self.DANGER_COLOR,
+                                              hover_color="#CC4028")
+
+        self.status_label.configure(text="[CMD] Auto-type loop STARTED.", text_color=self.SUCCESS_COLOR)
+
+        # Start the loop thread
+        threading.Thread(target=self._threaded_find_click_type_LOOP, args=(clean_lines,), daemon=True).start()
+
+    def _threaded_find_click_type_LOOP(self, clean_lines):
+        """
+        The main 'while true' loop for auto-typing.
+        Ang loop ay magsa-success at magbe-break pagkatapos ng ISANG cycle.
+        """
+        try:
+            # Loop will run AT LEAST once since self.is_auto_typing is set
+            while self.is_auto_typing.is_set() and not is_stop_requested.is_set():
+                print("\n🔄 Starting new auto-type cycle...")
+
+                if not self.devices:
+                    self.after(0, lambda: self.status_label.configure(text="⚠️ No devices, stopping loop.",
+                                                                      text_color="#ffc107"))
+                    break
+
+                # Run the task on all devices concurrently for this one cycle
+                futures = []
+                for serial in self.devices:
+                    if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
+                        break
+
+                    random_text = random.choice(clean_lines)
+                    futures.append(self.executor.submit(self._run_find_click_type_on_device, serial, random_text))
+
+                # Wait for this cycle to finish
+                if futures:
+                    concurrent.futures.wait(futures)
+
+                    # OPTIONAL: Kung gusto mong i-check ang results para sa errors, gawin dito:
+                    # for future in futures:
+                    #     if future.exception() is not None:
+                    #         print(f"    ❌ Error on device: {future.exception()}")
+
+                # Check for stop signals again
+                if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
+                    break
+
+                # I-update ang status at mag-break
+                self.after(0, lambda: self.status_label.configure(
+                    text="[SUCCESS] Auto-type cycle complete. Stopping loop.", text_color=self.ACCENT_COLOR))
+
+                # ITO ANG NAGPAPATIGIL NG LOOP MATAPOS ANG ISANG SUCCESSFUL RUN
+                break
+
+                # Old sleep code removed, as we want to break immediately after success
+
+        except Exception as e:
+            print(f"Error in auto-type loop: {e}")
+            # Tanggalin ang 'pass' at gawing visible ang error para sa debugging
+        finally:
+            # Loop ended (either by toggle, global stop, or successful completion/break)
+            # Reset the button in the main thread
+            self.after(0, self.reset_auto_type_button)
+
+    def _run_find_click_type_on_device(self, serial, text_to_send):
+        """
+        The core logic that runs on each device to find, click, and type.
+        Returns (bool success, str message)
+        """
+        local_xml_file = f"ui_dump_{serial}_{uuid.uuid4()}.xml"
+
+        try:
+            # Step 1: Dump UI
+            dump_cmd = ['shell', 'uiautomator', 'dump', '/data/local/tmp/ui.xml']
+            success, out = run_adb_command(dump_cmd, serial)
+            if not success:
+                # print(f"[{serial}] Failed to dump UI.")
+                return False, "Failed to dump UI"
+
+            # Step 2: Pull XML
+            pull_cmd = ['pull', '/data/local/tmp/ui.xml', local_xml_file]
+            success, out = run_adb_command(pull_cmd, serial)
+            if not success:
+                # print(f"[{serial}] Failed to pull UI XML.")
+                return False, "Failed to pull UI XML"
+
+            # Step 3: Parse XML
+            if not os.path.exists(local_xml_file):
+                # print(f"[{serial}] XML file not found locally.")
+                return False, "XML file not found"
+
+            tree = ET.parse(local_xml_file)
+            root = tree.getroot()
+
+            # Step 4: Find EditText
+            # Find the first node with class="android.widget.EditText"
+            edit_text_node = root.find('.//node[@class="android.widget.EditText"]')
+
+            if edit_text_node is None:
+                # print(f"[{serial}] No EditText found.")
+                return False, "No EditText found"
+
+            # Step 5: Get Bounds
+            bounds_str = edit_text_node.get('bounds')  # e.g., "[100,200][300,400]"
+            if not bounds_str:
+                # print(f"[{serial}] EditText found but has no bounds.")
+                return False, "EditText has no bounds"
+
+            coords = re.findall(r'\d+', bounds_str)
+            if len(coords) < 4:
+                # print(f"[{serial}] Invalid bounds string.")
+                return False, "Invalid bounds string"
+
+            x1, y1, x2, y2 = map(int, coords[:4])
+
+            # Step 6: Calculate Center
+            tap_x = (x1 + x2) // 2
+            tap_y = (y1 + y2) // 2
+
+            # Step 7: Click
+            tap_cmd = ['shell', 'input', 'tap', str(tap_x), str(tap_y)]
+            success, out = run_adb_command(tap_cmd, serial)
+            if not success:
+                # print(f"[{serial}] Failed to tap.")
+                return False, "Failed to tap"
+
+            # Short delay after tapping before typing
+            time.sleep(0.5)
+
+            # Step 8: Type
+            run_text_command(text_to_send, serial)
+            # print(f"[{serial}] Click and type successful.")
+            return True, "Success"
+
+        except ET.ParseError:
+            # print(f"[{serial}] Failed to parse XML.")
+            return False, "Failed to parse XML"
+        except Exception as e:
+            # print(f"[{serial}] Error in find/click/type: {e}")
+            return False, str(e)
+        finally:
+            # Step 9: Cleanup
+            if os.path.exists(local_xml_file):
+                os.remove(local_xml_file)
+
+    def reset_auto_type_button(self):
+        """Resets the auto-type button to its 'START' state."""
+        self.is_auto_typing.clear()
+
+        # Check if button exists before configuring (in case window is closing)
+        if hasattr(self, 'find_click_type_button') and self.find_click_type_button.winfo_exists():
+            self.find_click_type_button.configure(text="START AUTO-TYPE ⌨️",
+                                                  fg_color="#3A3A3A",
+                                                  hover_color="#555555")
+
+        if hasattr(self, 'status_label') and self.status_label.winfo_exists():
+            # Only update status if it's not a global stop
+            if not is_stop_requested.is_set():
+                self.status_label.configure(text="[CMD] Auto-type loop Done.", text_color=self.ACCENT_COLOR)
+
+    # --- End of new methods ---
 
     def remove_emojis_from_file(self):
         # ... (Implementation remains the same, adjusted status text colors)
@@ -2313,6 +2545,9 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
         self.status_label.configure(text="⚠️ TERMINATING ALL ACTIVE COMMANDS...", text_color="#ffc107")
         is_stop_requested.set()
 
+        # --- NEW: Also clear the auto-type flag ---
+        self.is_auto_typing.clear()
+
         # Wait for all current tasks to finish (or be terminated)
         self.executor.shutdown(wait=True)
 
@@ -2322,8 +2557,12 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
 
         self.status_label.configure(text="✅ ALL OPERATIONS TERMINATED. Ready.", text_color=self.SUCCESS_COLOR)
 
+        # Also reset the button state just in case
+        self.reset_auto_type_button()
+
 
 if __name__ == '__main__':
     multiprocessing.freeze_support()
     app = AdbControllerApp()
     app.mainloop()
+
