@@ -668,7 +668,7 @@ class AdbControllerApp(ctk.CTk):
         title = "New ADB Commander Update!"
         message = (
             f"An improved version ({latest_version}) is now available!\n\n"
-            "New Auto Click what's on your mind Auto Type caption This update contains the latest upgrades and performance improvements for faster and more reliable control of your devices.\n\n"
+            "New Auto Click what's on your mind Auto Type caption Tips paste Link to Share link and click Share posts % click Auto START AUTO-TYPE BUTTOn This update contains the latest upgrades and performance improvements for faster and more reliable control of your devices.\n\n"
             "The app will close and restart to complete the update. Would you like to update now?"
         )
 
@@ -2565,4 +2565,5 @@ if __name__ == '__main__':
     multiprocessing.freeze_support()
     app = AdbControllerApp()
     app.mainloop()
+
 
