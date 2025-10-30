@@ -23,7 +23,7 @@ import uuid  # Added for explicit import, though it was in the snippet
 import xml.etree.ElementTree as ET  # For XML parsing
 
 # --- App Version and Update URL ---
-__version__ = "1.3.9"  # Updated version number
+__version__ = "1.4.0"  # Updated version number
 UPDATE_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/main.py"
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/version.txt"
 
@@ -100,14 +100,22 @@ def run_text_command(text_to_send, serial):
     # This is often more reliable than char-by-char for long text
     formatted_text = text_to_send.replace(" ", "%s")
 
-    try:
-        command = ['shell', 'input', 'text', formatted_text]
-        subprocess.run(['adb', '-s', serial] + command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                       check=True, timeout=15)
+    DELAY_PER_CHAR = 0.02
 
-    except Exception as e:
-        # print(f"An error occurred on device {serial}: {e}")
-        pass
+    while True:
+        try:
+            # Ulitin ang bawat letra sa formatted_text
+            for char in formatted_text:
+                # 1. Mag-type ng isang letra
+                command = ['adb', '-s', serial, 'shell', 'input', 'text', char]
+                subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               check=True, timeout=60)
+
+                # 2. Maghintay (Delay) bago i-type ang susunod na letra
+                time.sleep(DELAY_PER_CHAR)
+        except Exception as e:
+            # print(f"An error occurred on device {serial}: {e}")
+            pass
 
 
 def create_and_run_updater_script(new_file_path, old_file_path):
@@ -166,10 +174,7 @@ class AdbControllerApp(ctk.CTk):
         self.apk_path = None  # New variable for APK installation
         self.is_muted = False  # State for volume control
         self.update_check_job = None  # New attribute for scheduled check
-
-        # New attributes for GET TOKEN tab
-        self.token_results_textbox = None
-        self.account_file_path_entry = None
+        self.is_update_prompt_showing = False  # Flag to prevent multiple update popups
 
         # --- NEW: State for auto-typing loop ---
         self.is_auto_typing = threading.Event()
@@ -202,9 +207,6 @@ class AdbControllerApp(ctk.CTk):
         ctk.CTkFrame(self.control_panel_scrollable, height=2, fg_color=self.ACCENT_COLOR).grid(row=1, column=0,
                                                                                                sticky='ew',
                                                                                                padx=25, pady=15)
-
-        # --- (Removed GUI Window Control Section) ---
-        # The rows for GUI control buttons were 2 and 3, now shifted up.
 
         # Device Management Section (Now at row 2, shifted from row 4)
         device_section_frame = ctk.CTkFrame(self.control_panel_scrollable, fg_color="transparent")
@@ -250,16 +252,12 @@ class AdbControllerApp(ctk.CTk):
                                        height=550)
         self.tab_view.grid(row=4, column=0, sticky="nsew", padx=25, pady=10)
 
-        self.tab_view.add("About")
+        # --- MODIFIED TABS ---
         self.tab_view.add("ADB Utilities")
         self.tab_view.add("FB Lite")
-        self.tab_view.add("TikTok")
-        self.tab_view.add("YouTube")
-        # self.tab_view.add("Text Cmd") # REMOVED
         self.tab_view.add("Image")
-        self.tab_view.add("FB API")
-        self.tab_view.add("GET TOKEN")  # ADDED NEW TAB
         self.tab_view.set("FB Lite")  # Start on the FB Lite tab
+        # --- END MODIFIED TABS ---
 
         self._configure_tab_layouts()
 
@@ -286,291 +284,7 @@ class AdbControllerApp(ctk.CTk):
         # Start the recurring check after initial setup
         self.start_periodic_update_check()
 
-    # --- New Methods for GET TOKEN Tab ---
-
-    def Login_API(self, email: str, password: str):
-        """
-        Performs the API request to retrieve the access token using the user's provided logic.
-        """
-        r = requests.Session()
-
-        # Define headers (using the user's provided headers)
-        head = {
-            'Host': 'b-graph.facebook.com',
-            'X-Fb-Connection-Quality': 'EXCELLENT',
-            'Authorization': 'OAuth 350685531728|62f8ce9f74b12f84c123cc23437a4a32',
-            'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 7.1.2; RMX3740 Build/QP1A.190711.020) [FBAN/FB4A;FBAV/417.0.0.33.65;FBPN/com.facebook.katana;FBLC/in_ID;FBBV/480086274;FBCR/Corporation Tbk;FBMF/realme;FBBD/realme;FBDV/RMX3740;FBSV/7.1.2;FBCA/x86:armeabi-v7a;FBDM/{density=1.0,width=540,height=960};FB_FW/1;FBRV/483172840;]',
-            'X-Tigon-Is-Retry': 'false',
-            'X-Fb-Friendly-Name': 'authenticate',
-            'X-Fb-Connection-Bandwidth': str(random.randrange(70000000, 80000000)),
-            'Zero-Rated': '0',
-            'X-Fb-Net-Hni': str(random.randrange(50000, 60000)),
-            'X-Fb-Sim-Hni': str(random.randrange(50000, 60000)),
-            'X-Fb-Request-Analytics-Tags': '{"network_tags":{"product":"350685531728","retry_attempt":"0"},"application_tags":"unknown"}',
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'X-Fb-Connection-Type': 'WIFI',
-            'X-Fb-Device-Group': str(random.randrange(4700, 5000)),
-            'Priority': 'u=3,i',
-            'Accept-Encoding': 'gzip, deflate',
-            'X-Fb-Http-Engine': 'Liger',
-            'X-Fb-Client-Ip': 'true',
-            'X-Fb-Server-Cluster': 'true',
-            'Content-Length': str(random.randrange(1500, 2000)),
-            'cache-control': "private, no-cache, no-store, must-revalidate",
-            "facebook-api-version": "v1.0",
-            "pragma": "no-cache",
-            "priority": "u=0,i",
-            "strict-transport-security": "max-age=15552000; preload",
-            "vary": "Accept-Encoding",
-            "x-fb-connection-quality": "GOOD; q=0.7, rtt=73, rtx=0, c=23, mss=1232, tbw=5012, tp=10, tpl=0, uplat=405, ullat=0",
-            "x-fb-debug": "g/lwUlHD6vXZly0pnMoWnhifQ8PoyIuzDnUKVk5ZWru6+2XT2yaUB9Y/TSXbt0/637lElrllnUhGyXNJLheBKA==",
-            "x-fb-request-id": "AEJauAi2IHwyhd_zl3pC-4E",
-            "x-fb-rev": "1025308755",
-            "x-fb-trace-id": "C/GnaBOOeUa",
-            "x-frame-options": "DENY"
-        }
-
-        # Define data payload (using the user's provided data)
-        data = {
-            'adid': str(uuid.uuid4()),
-            'format': 'json',
-            'device_id': str(uuid.uuid4()),
-            'email': email,
-            'password': f'#PWD_FB4A:0:{str(time.time())[:10]}:{password}',
-            'generate_analytics_claim': '1',
-            'community_id': '',
-            'linked_guest_account_userid': '',
-            'cpl': True,
-            'try_num': '1',
-            'family_device_id': str(uuid.uuid4()),
-            'secure_family_device_id': str(uuid.uuid4()),
-            'credentials_type': 'password',
-            'account_switcher_uids': [],
-            'fb4a_shared_phone_cpl_experiment': 'fb4a_shared_phone_nonce_cpl_at_risk_v3',
-            'fb4a_shared_phone_cpl_group': 'enable_v3_at_risk',
-            'enroll_misauth': False,
-            'generate_session_cookies': '1',
-            'error_detail_type': 'button_with_disabled',
-            'source': 'login',
-            'machine_id': ''.join(
-                [random.choice('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789') for i in range(24)]),
-            'jazoest': str(random.randrange(22000, 23000)),
-            'meta_inf_fbmeta': 'V2_UNTAGGED',
-            'advertiser_id': str(uuid.uuid4()),
-            'encrypted_msisdn': '',
-            'currently_logged_in_userid': '0',
-            'locale': 'id_ID',
-            'client_country_code': 'ID',
-            'fb_api_req_friendly_name': 'authenticate',
-            'fb_api_caller_class': 'Fb4aAuthHandler',
-            'api_key': '882a8490361da98702bf97a021ddc14d',
-            'sig': hashlib.md5(str(uuid.uuid4()).encode()).hexdigest()[:32],
-            'access_token': '350685531728|62f8ce9f74b12f84c123cc23437a4a32'
-        }
-
-        try:
-            pos = r.post('https://b-graph.facebook.com/auth/login', data=data, headers=head, timeout=15).json()
-
-            if ('session_key' in str(pos)) and ('access_token' in str(pos)):
-                token = pos['access_token']
-                # Success: return email and token
-                return email, token, None
-
-            elif 'error' in pos and 'message' in pos['error']:
-                error_msg = pos['error']['message']
-                # Failure: return email and error message
-                return email, None, error_msg
-            else:
-                # Unknown error format
-                return email, None, "Unknown error format: " + json.dumps(pos)
-
-        except requests.exceptions.RequestException as e:
-            # Network or Timeout error
-            return email, None, f"Network Error: {e.__class__.__name__}"
-        except Exception as e:
-            # General error
-            return email, None, f"General Error: {e}"
-
-    def browse_account_file(self):
-        """Opens a file dialog to select the account.txt file."""
-        file_path = filedialog.askopenfilename(
-            defaultextension=".txt",
-            filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
-        )
-        if file_path:
-            self.account_file_path_entry.delete(0, tk.END)
-            self.account_file_path_entry.insert(0, file_path)
-            self.status_label.configure(text=f"✅ ACCOUNT FILE SELECTED: {os.path.basename(file_path)}",
-                                        text_color=self.SUCCESS_COLOR)
-
-    def start_token_retrieval(self):
-        """Executes the token retrieval process in a separate thread."""
-        file_path = self.account_file_path_entry.get().strip()
-        if not file_path or not os.path.exists(file_path):
-            self.status_label.configure(text="⚠️ Please select a valid account file.", text_color="#ffc107")
-            return
-
-        self.token_results_textbox.configure(state="normal")
-        self.token_results_textbox.delete("1.0", "end")
-        self.token_results_textbox.insert("end", f"Starting retrieval from {os.path.basename(file_path)}...\n")
-        self.token_results_textbox.configure(state="disabled")
-
-        # Start the token retrieval in a thread
-        threading.Thread(target=self._threaded_get_token_from_file, args=(file_path,), daemon=True).start()
-
-    def _threaded_get_token_from_file(self, file_path):
-        """
-        Reads the account file and attempts to get a token for each account.
-        Saves successful tokens to token.txt.
-        """
-        if is_stop_requested.is_set():
-            self.after(0, lambda: self.status_label.configure(
-                text="🛑 Operation terminated by user.", text_color="#ffc107"))
-            return
-
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                raw_lines = f.readlines()
-
-            account_lines = [line.strip() for line in raw_lines if line.strip()]
-
-        except FileNotFoundError:
-            self.after(0, lambda: self.status_label.configure(
-                text="❌ ERROR: Account file not found.", text_color=self.DANGER_COLOR))
-            return
-        except Exception as e:
-            self.after(0, lambda: self.status_label.configure(
-                text=f"❌ ERROR reading account file: {e}", text_color=self.DANGER_COLOR))
-            return
-
-        total_accounts = len(account_lines)
-        success_count = 0
-
-        # Determine output file path (e.g., in the same directory as the account file)
-        output_dir = Path(file_path).parent
-        token_file_path = output_dir / "token.txt"
-
-        self.after(0, lambda: self.status_label.configure(
-            text=f"[CMD] Starting token retrieval for {total_accounts} accounts...", text_color=self.ACCENT_COLOR))
-
-        # Open token.txt file in append mode before starting the loop
-        # This will create the file if it doesn't exist.
-        try:
-            token_file = open(token_file_path, 'a', encoding='utf-8')
-        except Exception as e:
-            self.after(0, lambda: self.status_label.configure(
-                text=f"❌ ERROR opening token.txt for writing: {e}", text_color=self.DANGER_COLOR))
-            self.after(0, lambda: self._append_result(
-                f"[FAIL] Could not save to token.txt: {e}", self.DANGER_COLOR))
-            return
-
-        # Use ThreadPoolExecutor for concurrent requests
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            future_to_account = {}
-            for i, line in enumerate(account_lines):
-                if is_stop_requested.is_set():
-                    break
-
-                try:
-                    # Expecting format: email\tpassword (tab separated)
-                    email, password = line.split('\t', 1)
-                    email = email.strip()
-                    password = password.strip()
-
-                    if not email or not password:
-                        self.after(0, lambda line=line: self._append_result(
-                            f"[FAIL] Invalid line format: {line.split()[0]}... (Missing email or password)",
-                            self.WARNING_COLOR))
-                        continue
-
-                    # Submit the task to the executor
-                    future = executor.submit(self.Login_API, email, password)
-                    future_to_account[future] = email
-
-                except ValueError:
-                    self.after(0, lambda line=line: self._append_result(
-                        f"[FAIL] Invalid line format: {line[:30]}... (Not tab-separated)", self.WARNING_COLOR))
-
-                # Small pause to avoid immediately overwhelming the server/network
-                time.sleep(0.05)
-
-            # Process results as they complete
-            for future in concurrent.futures.as_completed(future_to_account):
-                if is_stop_requested.is_set():
-                    break
-
-                email = future_to_account[future]
-                try:
-                    email, token, error_msg = future.result()
-
-                    if token:
-                        success_count += 1
-                        result_text = f"[SUCCESS] {email} -> {token}"
-
-                        # --- SAVING TOKEN TO FILE ---
-                        try:
-                            token_file.write(f"{email}\t{token}\n")
-                            # Flush to ensure immediate write to disk
-                            token_file.flush()
-                        except Exception as e:
-                            self.after(0, lambda: self._append_result(
-                                f"[FAIL] Failed to write token for {email} to token.txt: {e}", self.DANGER_COLOR))
-                        # --- END SAVING TOKEN TO FILE ---
-
-                        self.after(0, lambda result=result_text: self._append_result(result, self.SUCCESS_COLOR))
-                        # Update status label with progress
-                        self.after(0, lambda count=success_count, total=total_accounts: self.status_label.configure(
-                            text=f"[{count}/{total}] Retrieving tokens... ({total - count} remaining)",
-                            text_color=self.ACCENT_COLOR))
-                    else:
-                        result_text = f"[FAIL] {email} -> {error_msg}"
-                        self.after(0, lambda result=result_text: self._append_result(result, self.DANGER_COLOR))
-                        # Update status label even on failure
-                        self.after(0, lambda count=success_count, total=total_accounts: self.status_label.configure(
-                            text=f"[{count}/{total}] Retrieving tokens... ({total - count} remaining)",
-                            text_color=self.ACCENT_COLOR))
-
-                except Exception as exc:
-                    result_text = f"[FAIL] {email} generated an exception: {exc.__class__.__name__}"
-                    self.after(0, lambda result=result_text: self._append_result(result, self.DANGER_COLOR))
-
-        # Close the token file after all operations are done
-        token_file.close()
-
-        final_message = f"✅ RETRIEVAL COMPLETE. Total successful tokens: {success_count} / {total_accounts}. Saved to {token_file_path.name}"
-        self.after(0, lambda: self.status_label.configure(text=final_message, text_color=self.SUCCESS_COLOR))
-        self.after(0, lambda: self._append_result(final_message.split('.')[0] + ".", self.SUCCESS_COLOR))
-
-    def _append_result(self, message, color):
-        """Helper to safely append results to the textbox from a non-main thread with color tags."""
-        self.token_results_textbox.configure(state="normal")
-
-        # Determine current content length to apply tag correctly
-        current_content = self.token_results_textbox.get("1.0", "end-1c")
-        start_index = self.token_results_textbox.index("end-1c")
-
-        if current_content.strip():
-            # If content exists, insert newline before the message
-            self.token_results_textbox.insert("end", "\n")
-            start_index = self.token_results_textbox.index("end-1c")
-            self.token_results_textbox.insert("end", message)
-        else:
-            # If empty, just insert the message
-            start_index = self.token_results_textbox.index("end-1c")
-            self.token_results_textbox.insert("end", message)
-
-        # Apply the tag to the inserted message
-        self.token_results_textbox.tag_config(self.SUCCESS_COLOR, foreground=self.SUCCESS_COLOR)
-        self.token_results_textbox.tag_config(self.DANGER_COLOR, foreground=self.DANGER_COLOR)
-        self.token_results_textbox.tag_config(self.WARNING_COLOR, foreground=self.WARNING_COLOR)
-
-        # Apply the color tag using start_index (where message starts) and end
-        self.token_results_textbox.tag_add(color, start_index, "end")
-
-        self.token_results_textbox.see("end")
-        self.token_results_textbox.configure(state="disabled")
-
-    # --- End of New Methods for GET TOKEN Tab ---
+    # --- REMOVED GET TOKEN METHODS ---
 
     # NEW METHOD: Setup periodic update check
     def start_periodic_update_check(self):
@@ -664,17 +378,24 @@ class AdbControllerApp(ctk.CTk):
         update_thread.start()
 
     def ask_for_update(self, latest_version):
-        # ... (Existing implementation is fine)
-        title = "New ADB Commander Update!"
-        message = (
-            f"An improved version ({latest_version}) is now available!\n\n"
-            "New Auto Click what's on your mind Auto Type caption This update contains the latest upgrades and performance improvements for faster and more reliable control of your devices.\n\n"
-            "The app will close and restart to complete the update. Would you like to update now?"
-        )
+        # --- FIXED POPUP ---
+        if self.is_update_prompt_showing:
+            return  # An update prompt is already active
 
-        response = messagebox.askyesno(title, message)
-        if response:
-            self.update_app()
+        try:
+            self.is_update_prompt_showing = True
+            title = "New ADB Commander Update!"
+            message = (
+                f"An improved version ({latest_version}) is now available!\n\n"
+                "New Auto Click what's on your mind Auto Type caption This update contains the latest upgrades and performance improvements for faster and more reliable control of your devices.\n\n"
+                "The app will close and restart to complete the update. Would you like to update now?"
+            )
+
+            response = messagebox.askyesno(title, message)
+            if response:
+                self.update_app()
+        finally:
+            self.is_update_prompt_showing = False  # Ensure this always runs
 
     def on_closing(self):
         # Cancel the periodic update check job
@@ -689,145 +410,30 @@ class AdbControllerApp(ctk.CTk):
         self.executor.shutdown(wait=False)
         self.destroy()
 
-    def _configure_get_token_tab(self, token_frame):
-        """Configures the layout for the GET TOKEN tab."""
-        token_frame.columnconfigure(0, weight=1)
-        token_frame.rowconfigure(5, weight=1)
-
-        # -----------------------------------------------------
-        # Section 1: Account File Selection
-        # -----------------------------------------------------
-        ctk.CTkLabel(token_frame, text="ACCOUNT FILE (email\\tpassword)",
-                     font=ctk.CTkFont(size=14, weight="bold"), text_color=self.ACCENT_COLOR).grid(row=0, column=0,
-                                                                                                  sticky='w', padx=15,
-                                                                                                  pady=(15, 5))
-        self.account_file_path_entry = ctk.CTkEntry(token_frame, placeholder_text="Path: Select account file (.txt)...",
-                                                    height=40, corner_radius=8)
-        self.account_file_path_entry.grid(row=1, column=0, sticky='ew', padx=15)
-
-        browse_account_button = ctk.CTkButton(token_frame, text="BROWSE ACCOUNT FILE 📁",
-                                              command=self.browse_account_file,
-                                              corner_radius=8, fg_color="#3A3A3A", hover_color="#555555", height=45)
-        browse_account_button.grid(row=2, column=0, sticky='ew', padx=15, pady=(10, 15))
-
-        # -----------------------------------------------------
-        # Section 2: Start Retrieval Button
-        # -----------------------------------------------------
-        self.start_token_button = ctk.CTkButton(token_frame, text="START TOKEN RETRIEVAL 🔑",
-                                                command=self.start_token_retrieval,
-                                                fg_color="#1877f2", hover_color="#1651b7", height=55,
-                                                font=ctk.CTkFont(size=16, weight="bold"))
-        self.start_token_button.grid(row=3, column=0, sticky='ew', padx=15, pady=(5, 15))
-
-        # -----------------------------------------------------
-        # Section 3: Results Console
-        # -----------------------------------------------------
-        ctk.CTkLabel(token_frame, text="RETRIEVAL RESULTS (Success/Fail)",
-                     font=ctk.CTkFont(size=14, weight="bold"), text_color=self.ACCENT_COLOR).grid(row=4, column=0,
-                                                                                                  sticky='w', padx=15,
-                                                                                                  pady=(10, 5))
-
-        self.token_results_textbox = ctk.CTkTextbox(token_frame, wrap="word", corner_radius=10,
-                                                    activate_scrollbars=True,
-                                                    font=ctk.CTkFont(size=12, family="Consolas"),
-                                                    fg_color=self.BACKGROUND_COLOR,
-                                                    border_color="#333333", border_width=1)
-        self.token_results_textbox.grid(row=5, column=0, padx=15, pady=(5, 15), sticky="nsew")
-        self.token_results_textbox.insert("end", "Status: Ready to retrieve tokens.")
-        self.token_results_textbox.configure(state="disabled")
+    # --- REMOVED _configure_get_token_tab ---
 
     def _configure_tab_layouts(self):
         """Helper method to configure the grid layout for each tab with improved spacing and the new Utility tab."""
 
-        # --- About Tab ---
-        about_frame = self.tab_view.tab("About")
-        about_frame.columnconfigure(0, weight=1)
-        about_frame.rowconfigure(1, weight=1)
-
-        ctk.CTkLabel(about_frame, text="ADB COMMANDER OVERVIEW",
-                     font=ctk.CTkFont(size=20, weight="bold"),
-                     text_color=self.ACCENT_COLOR).grid(row=0, column=0, pady=(15, 5), sticky="n")
-
-        about_text = f"""The "ADB TOOL BY DARS:" (v{__version__}) is a desktop application designed to simplify the management and control of multiple Android devices simultaneously It leverages the Android Debug Bridge (ADB) to send commands quickly and efficiently Through its simple interface you can perform various tasks such as tapping swiping and running specific commands on all connected devices at once
-
-Getting Started
-Connect Your Devices Ensure USB Debugging is enabled on all Android devices you intend to use Then connect them to your computer using USB cables
-
-Refresh the Device List On the left-side control panel click the Refresh button The application will automatically detect and list all connected devices by their serial number
-
-Select the Device to Control Click on a device's serial number from the list When selected the device's screen will appear on the right side of the app allowing you to control it directly
-
-Controlling the Device Screen
-The main feature of this tool is the live screen control Once your device is connected and its screen is visible you can perform the following actions
-
-Tap (Single Click) Click anywhere on the screen to simulate a single tap
-Swipe Click and drag your mouse on the device screen This will perform a swipe gesture just like on the physical device
-Long Press Press and hold the left mouse button for half a second (05s) This will execute a long press command
-Additionally there are pre-set buttons below the device screen for quick actions
-
-Home Returns to the device's home screen
-Back Navigates back to the previous screen
-Recents Shows the list of recently used apps
-Scroll Down/Up Scrolls the screen up or down
-Additional Features (Tab View)
-The left-side panel features a Tab View with various command categories
-
-FB Lite Use this tab to open Facebook posts share links or launch/force-stop the Facebook Lite app. This tab now also includes Text Command functions.
-TikTok Open TikTok post URLs or launch/force-stop the TikTok Lite app
-YouTube Visit YouTube video URLs or launch/force-stop the YouTube app (using Chrome)
-Image Enter the filename of an image in your phone's Download folder to share it via Facebook Lite
-FB API Use this tab to post text and links directly to Facebook using the Graph API (requires an Access Token file).
-GET TOKEN Use this tab to retrieve a Facebook Access Token from accounts listed in a file (email\\tpassword format).
-Important Notes
-General Control All commands (except for taps swipes and long presses) are sent to all connected devices simultaneously
-Stop All Commands To halt any currently running commands click the Stop All Commands button
-Auto-Update The tool includes an update feature Click the Update button to automatically download the latest version to your Desktop
-ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your system's PATH for the application to function correctly"""
-        about_text_box = ctk.CTkTextbox(about_frame, wrap="word", corner_radius=10, activate_scrollbars=True,
-                                        font=ctk.CTkFont(size=14, family="Consolas"), fg_color=self.BACKGROUND_COLOR,
-                                        border_color="#333333", border_width=1)
-        about_text_box.grid(row=1, column=0, padx=15, pady=15, sticky="nsew")
-        about_text_box.insert("1.0", about_text)
-        about_text_box.configure(state="disabled")
+        # --- REMOVED About Tab ---
 
         # --- ADB Utilities Tab (REFINED Minimalist Layout) ---
         utility_frame = self.tab_view.tab("ADB Utilities")
         utility_frame.columnconfigure(0, weight=1)
-        utility_frame.rowconfigure(13, weight=1)  # Increased row count for the new section
+        utility_frame.rowconfigure(5, weight=1)  # Adjusted row count
+
+        # --- REMOVED POWER CONTROL ---
 
         # -----------------------------------------------------
-        # Section 1: System Commands (Reboot/Shutdown)
-        # -----------------------------------------------------
-        ctk.CTkLabel(utility_frame, text="POWER CONTROL",
-                     font=ctk.CTkFont(size=16, weight="bold"), text_color=self.WARNING_COLOR).grid(row=0, column=0,
-                                                                                                   sticky='w', padx=15,
-                                                                                                   pady=(15, 5))
-
-        system_cmd_frame = ctk.CTkFrame(utility_frame, fg_color=self.FRAME_COLOR)
-        system_cmd_frame.grid(row=1, column=0, sticky='ew', padx=15, pady=(5, 10))
-        system_cmd_frame.columnconfigure(0, weight=1)
-        system_cmd_frame.columnconfigure(1, weight=1)
-
-        reboot_button = ctk.CTkButton(system_cmd_frame, text="REBOOT 🔄", command=self.reboot_devices,
-                                      fg_color=self.WARNING_COLOR, hover_color="#CC8400", corner_radius=8, height=40,
-                                      text_color=self.BACKGROUND_COLOR)
-        reboot_button.grid(row=0, column=0, sticky='ew', padx=(10, 5), pady=10)
-
-        shutdown_button = ctk.CTkButton(system_cmd_frame, text="POWER OFF ❌", command=self.shutdown_devices,
-                                        fg_color=self.DANGER_COLOR, hover_color="#CC4028", corner_radius=8, height=40,
-                                        text_color=self.ACCENT_COLOR)
-        shutdown_button.grid(row=0, column=1, sticky='ew', padx=(5, 10), pady=10)
-
-        # -----------------------------------------------------
-        # Section 2: Airplane Mode Control (NEW)
+        # Section 1: Airplane Mode Control (NEW)
         # -----------------------------------------------------
         ctk.CTkLabel(utility_frame, text="AIRPLANE MODE",
-                     font=ctk.CTkFont(size=16, weight="bold"), text_color=self.ACCENT_COLOR).grid(row=2, column=0,
+                     font=ctk.CTkFont(size=16, weight="bold"), text_color=self.ACCENT_COLOR).grid(row=0, column=0,
                                                                                                   sticky='w', padx=15,
-                                                                                                  pady=(10, 5))
+                                                                                                  pady=(15, 5))
 
         airplane_mode_frame = ctk.CTkFrame(utility_frame, fg_color=self.FRAME_COLOR)
-        airplane_mode_frame.grid(row=3, column=0, sticky='ew', padx=15, pady=(5, 10))
+        airplane_mode_frame.grid(row=1, column=0, sticky='ew', padx=15, pady=(5, 10))
         airplane_mode_frame.columnconfigure(0, weight=1)
         airplane_mode_frame.columnconfigure(1, weight=1)
 
@@ -842,81 +448,24 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
                                                 height=40, text_color=self.BACKGROUND_COLOR)
         disable_airplane_button.grid(row=0, column=1, sticky='ew', padx=(5, 10), pady=10)
 
-        # -----------------------------------------------------
-        # Section 3: Brightness Control (All Devices) (Shifted from row 2/3 to 4/5)
-        # -----------------------------------------------------
-        ctk.CTkLabel(utility_frame, text="BRIGHTNESS [0-255]",
-                     font=ctk.CTkFont(size=16, weight="bold"), text_color=self.ACCENT_COLOR).grid(row=4, column=0,
-                                                                                                  sticky='w', padx=15,
-                                                                                                  pady=(10, 5))
+        # --- REMOVED BRIGHTNESS CONTROL ---
 
-        brightness_frame = ctk.CTkFrame(utility_frame, fg_color=self.FRAME_COLOR)
-        brightness_frame.grid(row=5, column=0, sticky='ew', padx=15, pady=(5, 10))
-        brightness_frame.columnconfigure(0, weight=1)
-        brightness_frame.columnconfigure(1, weight=1)
-        brightness_frame.columnconfigure(2, weight=1)
-
-        self.brightness_slider = ctk.CTkSlider(brightness_frame, from_=0, to=255, command=self.set_brightness,
-                                               number_of_steps=256, button_color=self.ACCENT_COLOR,
-                                               button_hover_color=self.ACCENT_HOVER, progress_color=self.ACCENT_COLOR)
-        self.brightness_slider.set(128)
-        self.brightness_slider.grid(row=0, column=0, columnspan=3, sticky='ew', padx=10, pady=(10, 5))
-
-        # Pre-set Brightness Buttons - Monochromatic gray/white
-        ctk.CTkButton(brightness_frame, text="LOW [20]", command=lambda: self.set_brightness(20),
-                      fg_color="#3A3A3A", hover_color="#555555", corner_radius=8, height=35).grid(row=1, column=0,
-                                                                                                  padx=(10, 5),
-                                                                                                  pady=(0, 10),
-                                                                                                  sticky='ew')
-        ctk.CTkButton(brightness_frame, text="MID [128]", command=lambda: self.set_brightness(128),
-                      fg_color="#3A3A3A", hover_color="#555555", corner_radius=8, height=35).grid(row=1, column=1,
-                                                                                                  padx=5, pady=(0, 10),
-                                                                                                  sticky='ew')
-        ctk.CTkButton(brightness_frame, text="MAX [255]", command=lambda: self.set_brightness(255),
-                      fg_color=self.ACCENT_COLOR, hover_color=self.ACCENT_HOVER, corner_radius=8, height=35,
-                      text_color=self.BACKGROUND_COLOR).grid(row=1, column=2, padx=(5, 10), pady=(0, 10), sticky='ew')
+        # --- REMOVED VOLUME CONTROL ---
 
         # -----------------------------------------------------
-        # Section 4: Volume Control (All Devices) (Shifted from row 4/5 to 6/7)
-        # -----------------------------------------------------
-        ctk.CTkLabel(utility_frame, text="VOLUME CONTROL",
-                     font=ctk.CTkFont(size=16, weight="bold"), text_color=self.ACCENT_COLOR).grid(row=6, column=0,
-                                                                                                  sticky='w', padx=15,
-                                                                                                  pady=(10, 5))
-
-        volume_frame = ctk.CTkFrame(utility_frame, fg_color=self.FRAME_COLOR)
-        volume_frame.grid(row=7, column=0, sticky='ew', padx=15, pady=(5, 10))
-        volume_frame.columnconfigure(0, weight=1)
-        volume_frame.columnconfigure(1, weight=1)
-        volume_frame.columnconfigure(2, weight=1)
-
-        ctk.CTkButton(volume_frame, text="VOL UP 🔊", command=lambda: self.send_adb_keyevent(24),
-                      fg_color=self.SUCCESS_COLOR, hover_color="#00A852", corner_radius=8, height=40,
-                      text_color=self.BACKGROUND_COLOR).grid(row=0, column=0, padx=(10, 5), pady=10, sticky='ew')
-
-        ctk.CTkButton(volume_frame, text="VOL DOWN 🔉", command=lambda: self.send_adb_keyevent(25),
-                      fg_color="#3A3A3A", hover_color="#555555", corner_radius=8, height=40).grid(row=0, column=1,
-                                                                                                  padx=5, pady=10,
-                                                                                                  sticky='ew')
-
-        self.mute_button = ctk.CTkButton(volume_frame, text="MUTE 🔇", command=self.toggle_mute,
-                                         fg_color="#3A3A3A", hover_color="#555555", corner_radius=8, height=40)
-        self.mute_button.grid(row=0, column=2, padx=(5, 10), pady=10, sticky='ew')
-
-        # -----------------------------------------------------
-        # Section 5: APK Installation (Shifted from row 6/7/8 to 8/9/10)
+        # Section 2: APK Installation (Shifted from row 6/7/8 to 8/9/10)
         # -----------------------------------------------------
         ctk.CTkLabel(utility_frame, text="APK INSTALLATION",
-                     font=ctk.CTkFont(size=16, weight="bold"), text_color=self.ACCENT_COLOR).grid(row=8, column=0,
+                     font=ctk.CTkFont(size=16, weight="bold"), text_color=self.ACCENT_COLOR).grid(row=2, column=0,
                                                                                                   sticky='w', padx=15,
                                                                                                   pady=(10, 5))
 
         self.apk_path_entry = ctk.CTkEntry(utility_frame, placeholder_text="Path: No APK selected...", height=35,
                                            corner_radius=8)
-        self.apk_path_entry.grid(row=9, column=0, sticky='ew', padx=15)
+        self.apk_path_entry.grid(row=3, column=0, sticky='ew', padx=15)
 
         apk_button_frame = ctk.CTkFrame(utility_frame, fg_color="transparent")
-        apk_button_frame.grid(row=10, column=0, sticky='ew', padx=15, pady=(5, 15))
+        apk_button_frame.grid(row=4, column=0, sticky='ew', padx=15, pady=(5, 15))
         apk_button_frame.columnconfigure(0, weight=1)
         apk_button_frame.columnconfigure(1, weight=1)
 
@@ -930,25 +479,7 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
                                            font=ctk.CTkFont(weight="bold"), text_color=self.BACKGROUND_COLOR)
         install_apk_button.grid(row=0, column=1, sticky='ew', padx=(5, 0))
 
-        # -----------------------------------------------------
-        # Section 6: Custom Shell Command (Shifted from row 9/10/11 to 11/12/13)
-        # -----------------------------------------------------
-        ctk.CTkLabel(utility_frame, text="CUSTOM SHELL COMMAND",
-                     font=ctk.CTkFont(size=16, weight="bold"), text_color=self.ACCENT_COLOR).grid(row=11, column=0,
-                                                                                                  sticky='w', padx=15,
-                                                                                                  pady=(10, 5))
-
-        self.custom_cmd_entry = ctk.CTkEntry(utility_frame,
-                                             placeholder_text="Input arguments (e.g., input keyevent 3)...", height=35,
-                                             corner_radius=8)
-        self.custom_cmd_entry.grid(row=12, column=0, sticky='ew', padx=15)
-
-        run_custom_button = ctk.CTkButton(utility_frame, text="RUN COMMAND >",
-                                          command=self.run_custom_shell_command,
-                                          fg_color="#3A3A3A", hover_color="#555555", height=45,
-                                          font=ctk.CTkFont(size=14, weight="bold"), text_color=self.ACCENT_COLOR,
-                                          border_color=self.ACCENT_COLOR, border_width=1)
-        run_custom_button.grid(row=13, column=0, sticky='ew', padx=15, pady=(10, 15))
+        # --- REMOVED CUSTOM SHELL COMMAND ---
 
         # --- Remaining Tabs (Layout is also professionally refined) ---
 
@@ -1004,7 +535,7 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
                                                                                                              column=0,
                                                                                                              sticky='w',
                                                                                                              pady=(
-                                                                                                             0, 5),
+                                                                                                                 0, 5),
                                                                                                              padx=15)
         self.file_path_entry = ctk.CTkEntry(fb_frame, placeholder_text="Path: Select a text file...", height=40,
                                             corner_radius=8)
@@ -1040,70 +571,9 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
                                                     border_color=self.ACCENT_COLOR, border_width=1)
         self.find_click_type_button.grid(row=13, column=0, sticky='ew', padx=15, pady=(10, 15))
 
-        # TikTok Tab
-        tiktok_frame = self.tab_view.tab("TikTok")
-        tiktok_frame.columnconfigure(0, weight=1)
-        tiktok_frame.rowconfigure(4, weight=1)
+        # --- REMOVED TikTok Tab ---
 
-        ctk.CTkLabel(tiktok_frame, text="TIKTOK URL", font=ctk.CTkFont(size=14, weight="bold")).grid(row=0, column=0,
-                                                                                                     sticky='w',
-                                                                                                     pady=(15, 5),
-                                                                                                     padx=15)
-        self.tiktok_url_entry = ctk.CTkEntry(tiktok_frame, placeholder_text="Enter TikTok URL...", height=40,
-                                             corner_radius=8)
-        self.tiktok_url_entry.grid(row=1, column=0, sticky='ew', padx=15)
-        self.tiktok_button = ctk.CTkButton(tiktok_frame, text="VISIT POST", command=self.open_tiktok_lite_deeplink,
-                                           fg_color="#fe2c55", hover_color="#c82333", height=45,
-                                           font=ctk.CTkFont(weight="bold"))
-        self.tiktok_button.grid(row=2, column=0, pady=10, sticky='ew', padx=15)
-
-        tiktok_launch_frame = ctk.CTkFrame(tiktok_frame, fg_color="transparent")
-        tiktok_launch_frame.grid(row=3, column=0, sticky='ew', padx=15, pady=(20, 15))
-        tiktok_launch_frame.columnconfigure(0, weight=1)
-        tiktok_launch_frame.columnconfigure(1, weight=1)
-        self.launch_tiktok_lite_button = ctk.CTkButton(tiktok_launch_frame, text="Launch TikTok Lite",
-                                                       command=self.launch_tiktok_lite, corner_radius=8,
-                                                       fg_color="#3A3A3A", hover_color="#555555")
-        self.launch_tiktok_lite_button.grid(row=0, column=0, sticky='ew', padx=(0, 5))
-        self.force_stop_tiktok_lite_button = ctk.CTkButton(tiktok_launch_frame, text="Force Stop",
-                                                           command=self.force_stop_tiktok_lite,
-                                                           fg_color=self.DANGER_COLOR,
-                                                           hover_color="#CC4028", corner_radius=8,
-                                                           text_color=self.ACCENT_COLOR)
-        self.force_stop_tiktok_lite_button.grid(row=0, column=1, sticky='ew', padx=(5, 0))
-
-        # YouTube Tab
-        youtube_frame = self.tab_view.tab("YouTube")
-        youtube_frame.columnconfigure(0, weight=1)
-        youtube_frame.rowconfigure(4, weight=1)
-
-        ctk.CTkLabel(youtube_frame, text="YOUTUBE URL", font=ctk.CTkFont(size=14, weight="bold")).grid(row=0, column=0,
-                                                                                                       sticky='w',
-                                                                                                       pady=(15, 5),
-                                                                                                       padx=15)
-        self.youtube_url_entry = ctk.CTkEntry(youtube_frame, placeholder_text="Enter YouTube URL...", height=40,
-                                              corner_radius=8)
-        self.youtube_url_entry.grid(row=1, column=0, sticky='ew', padx=15)
-        self.youtube_button = ctk.CTkButton(youtube_frame, text="VISIT VIDEO", command=self.open_youtube_deeplink,
-                                            fg_color="#ff0000", hover_color="#cc0000", height=45,
-                                            font=ctk.CTkFont(weight="bold"))
-        self.youtube_button.grid(row=2, column=0, pady=10, sticky='ew', padx=15)
-
-        youtube_launch_frame = ctk.CTkFrame(youtube_frame, fg_color="transparent")
-        youtube_launch_frame.grid(row=3, column=0, sticky='ew', padx=15, pady=(20, 15))
-        youtube_launch_frame.columnconfigure(0, weight=1)
-        youtube_launch_frame.columnconfigure(1, weight=1)
-        self.launch_youtube_button = ctk.CTkButton(youtube_launch_frame, text="Launch Chrome",
-                                                   command=self.launch_youtube, corner_radius=8,
-                                                   fg_color="#3A3A3A", hover_color="#555555")
-        self.launch_youtube_button.grid(row=0, column=0, sticky='ew', padx=(0, 5))
-        self.force_stop_youtube_button = ctk.CTkButton(youtube_launch_frame, text="Force Stop Chrome",
-                                                       command=self.force_stop_youtube, fg_color=self.DANGER_COLOR,
-                                                       hover_color="#CC4028", corner_radius=8,
-                                                       text_color=self.ACCENT_COLOR)
-        self.force_stop_youtube_button.grid(row=0, column=1, sticky='ew', padx=(5, 0))
-
-        # Text Command Tab - REMOVED
+        # --- REMOVED YouTube Tab ---
 
         # Image Tab
         image_frame = self.tab_view.tab("Image")
@@ -1122,248 +592,11 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
                                                 font=ctk.CTkFont(weight="bold"))
         self.share_image_button.grid(row=2, column=0, sticky='ew', padx=15, pady=(10, 15))
 
-        # FB API Tab (NEW)
-        fb_api_frame = self.tab_view.tab("FB API")
-        fb_api_frame.columnconfigure(0, weight=1)
-        fb_api_frame.rowconfigure(10, weight=1)
+        # --- REMOVED FB API Tab ---
 
-        # -----------------------------------------------------
-        # Section 1: Access Token File
-        # -----------------------------------------------------
-        ctk.CTkLabel(fb_api_frame, text="FACEBOOK ACCESS TOKEN FILE (email|TOKEN or TOKEN)",
-                     font=ctk.CTkFont(size=14, weight="bold"), text_color=self.ACCENT_COLOR).grid(row=0, column=0,
-                                                                                                  sticky='w', padx=15,
-                                                                                                  pady=(15, 5))
-        self.fb_api_token_entry = ctk.CTkEntry(fb_api_frame, placeholder_text="Path: Select tokens file (.txt)...",
-                                               height=40, corner_radius=8)
-        self.fb_api_token_entry.grid(row=1, column=0, sticky='ew', padx=15)
+        # --- REMOVED GET TOKEN Tab ---
 
-        browse_token_button = ctk.CTkButton(fb_api_frame, text="BROWSE TOKEN FILE 🔑", command=self.browse_token_file,
-                                            corner_radius=8, fg_color="#3A3A3A", hover_color="#555555", height=45)
-        browse_token_button.grid(row=2, column=0, sticky='ew', padx=15, pady=(10, 15))
-
-        # -----------------------------------------------------
-        # Section 2: Caption/Message File
-        # -----------------------------------------------------
-        ctk.CTkLabel(fb_api_frame, text="POST CAPTION/MESSAGE FILE (Random Line)",
-                     font=ctk.CTkFont(size=14, weight="bold"), text_color=self.ACCENT_COLOR).grid(row=3, column=0,
-                                                                                                  sticky='w', padx=15,
-                                                                                                  pady=(15, 5))
-        self.fb_api_message_file_entry = ctk.CTkEntry(fb_api_frame,
-                                                      placeholder_text="Path: Select caption file (.txt)...",
-                                                      height=40, corner_radius=8)
-        self.fb_api_message_file_entry.grid(row=4, column=0, sticky='ew', padx=15, pady=(0, 5))
-
-        browse_caption_button = ctk.CTkButton(fb_api_frame, text="BROWSE CAPTION FILE 💬",
-                                              command=self.browse_caption_file,
-                                              corner_radius=8, fg_color="#3A3A3A", hover_color="#555555", height=45)
-        browse_caption_button.grid(row=5, column=0, sticky='ew', padx=15, pady=(10, 15))
-
-        # -----------------------------------------------------
-        # Section 3: Link and Target ID
-        # -----------------------------------------------------
-        ctk.CTkLabel(fb_api_frame, text="LINK AND TARGET CONFIG (Optional)",
-                     font=ctk.CTkFont(size=14, weight="bold"), text_color=self.ACCENT_COLOR).grid(row=6, column=0,
-                                                                                                  sticky='w', padx=15,
-                                                                                                  pady=(10, 5))
-
-        self.fb_api_link_entry = ctk.CTkEntry(fb_api_frame, placeholder_text="Enter link URL to share (Optional)...",
-                                              height=40, corner_radius=8)
-        self.fb_api_link_entry.grid(row=7, column=0, sticky='ew', padx=15, pady=(0, 5))
-
-        self.fb_api_target_entry = ctk.CTkEntry(fb_api_frame, placeholder_text="Enter user ID or 'me' (Default: me)...",
-                                                height=40, corner_radius=8)
-        self.fb_api_target_entry.insert(0, 'me')
-        self.fb_api_target_entry.grid(row=8, column=0, sticky='ew', padx=15, pady=(5, 15))
-
-        # -----------------------------------------------------
-        # Section 4: Post Button
-        # -----------------------------------------------------
-        self.fb_api_post_button = ctk.CTkButton(fb_api_frame, text="POST TO FACEBOOK API (Using All Tokens) 🚀",
-                                                command=self.post_to_facebook_api,
-                                                fg_color="#1877f2", hover_color="#1651b7", height=55,
-                                                font=ctk.CTkFont(size=16, weight="bold"))
-        self.fb_api_post_button.grid(row=9, column=0, sticky='ew', padx=15, pady=(10, 15))
-
-        # --- NEW GET TOKEN TAB CONFIGURATION ---
-        self._configure_get_token_tab(self.tab_view.tab("GET TOKEN"))
-
-    # --- Existing Facebook API Methods ---
-
-    def browse_token_file(self):
-        """Opens a file dialog to select the text file containing the Facebook Access Token(s)."""
-        file_path = filedialog.askopenfilename(
-            defaultextension=".txt",
-            filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
-        )
-        if file_path:
-            self.fb_api_token_entry.delete(0, tk.END)
-            self.fb_api_token_entry.insert(0, file_path)
-            self.status_label.configure(text=f"✅ TOKEN FILE SELECTED: {os.path.basename(file_path)}",
-                                        text_color=self.SUCCESS_COLOR)
-
-    def browse_caption_file(self):
-        """Opens a file dialog to select the text file containing the messages/captions."""
-        file_path = filedialog.askopenfilename(
-            defaultextension=".txt",
-            filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
-        )
-        if file_path:
-            self.fb_api_message_file_entry.delete(0, tk.END)
-            self.fb_api_message_file_entry.insert(0, file_path)
-            self.status_label.configure(text=f"✅ CAPTION FILE SELECTED: {os.path.basename(file_path)}",
-                                        text_color=self.SUCCESS_COLOR)
-
-    def post_to_facebook_api(self):
-        """Executes the Facebook Graph API post in a separate thread."""
-        token_file_path = self.fb_api_token_entry.get().strip()
-        caption_file_path = self.fb_api_message_file_entry.get().strip()
-        link_url = self.fb_api_link_entry.get().strip()
-        target_id = self.fb_api_target_entry.get().strip() or 'me'
-
-        if not token_file_path:
-            self.status_label.configure(text="⚠️ Please select an Access Token file.", text_color="#ffc107")
-            return
-
-        if not caption_file_path:
-            self.status_label.configure(text="⚠️ Please select a Caption/Message file.", text_color="#ffc107")
-            return
-
-        if not link_url and not caption_file_path:
-            self.status_label.configure(text="⚠️ Enter a Link URL or select a Caption file.", text_color="#ffc107")
-            return
-
-        # Start the API call in a thread to keep the GUI responsive
-        threading.Thread(target=self._threaded_post_api_call,
-                         args=(token_file_path, caption_file_path, link_url, target_id),
-                         daemon=True).start()
-
-    def _threaded_post_api_call(self, token_file_path, caption_file_path, link_url, target_id):
-        """
-        The actual network call logic executed in a thread.
-        Reads all tokens, reads all captions, loops through all tokens, and posts with a random caption.
-        """
-        self.after(0, lambda: self.status_label.configure(
-            text=f"[CMD] Preparing to post to {target_id}'s feed using tokens and captions...",
-            text_color=self.ACCENT_COLOR))
-
-        # 1. Read and Parse Access Tokens
-        valid_tokens = []
-        try:
-            with open(token_file_path, 'r', encoding='utf-8') as f:
-                raw_lines = f.readlines()
-
-            for line in raw_lines:
-                line = line.strip()
-                if not line:
-                    continue
-
-                # Check for 'email|TOKEN' format
-                if '|' in line:
-                    parts = line.split('|', 1)
-                    token = parts[1].strip()
-                else:
-                    # Assume the whole line is the token
-                    token = line
-
-                if token:
-                    valid_tokens.append(token)
-
-        except FileNotFoundError:
-            self.after(0, lambda: self.status_label.configure(
-                text="❌ ERROR: Token file not found.", text_color=self.DANGER_COLOR))
-            return
-        except Exception as e:
-            self.after(0, lambda: self.status_label.configure(
-                text=f"❌ ERROR reading token file: {e}", text_color=self.DANGER_COLOR))
-            return
-
-        if not valid_tokens:
-            self.after(0, lambda: self.status_label.configure(
-                text="❌ ERROR: No valid tokens found in the file.", text_color=self.DANGER_COLOR))
-            return
-
-        # 2. Read and Parse Captions/Messages
-        try:
-            with open(caption_file_path, 'r', encoding='utf-8') as f:
-                raw_lines = f.readlines()
-
-            clean_captions = [line.strip() for line in raw_lines if line.strip()]
-
-        except FileNotFoundError:
-            self.after(0, lambda: self.status_label.configure(
-                text="❌ ERROR: Caption file not found.", text_color=self.DANGER_COLOR))
-            return
-        except Exception as e:
-            self.after(0, lambda: self.status_label.configure(
-                text=f"❌ ERROR reading caption file: {e}", text_color=self.DANGER_COLOR))
-            return
-
-        if not clean_captions:
-            self.after(0, lambda: self.status_label.configure(
-                text="❌ ERROR: Caption file is empty.", text_color=self.DANGER_COLOR))
-            return
-
-        # 3. Post using all tokens with random captions
-        API_VERSION = 'v19.0'
-        url = f'https://graph.facebook.com/{API_VERSION}/{target_id}/feed'
-        success_count = 0
-
-        for i, access_token in enumerate(valid_tokens):
-            if is_stop_requested.is_set():
-                self.after(0, lambda: self.status_label.configure(
-                    text="🛑 Operation terminated by user.", text_color="#ffc107"))
-                break
-
-            # Choose a random message for the current token
-            random_message = random.choice(clean_captions)
-
-            # Use only a short snippet of the token for display (first 10 chars)
-            display_token_snippet = access_token[:10] + '...'
-            self.after(0, lambda msg=random_message: self.status_label.configure(
-                text=f"[{i + 1}/{len(valid_tokens)}] Posting (Token: {display_token_snippet}, Msg: '{msg[:20]}...')...",
-                text_color=self.ACCENT_COLOR))
-
-            payload = {
-                'message': random_message,
-                'link': link_url,
-                'access_token': access_token
-            }
-
-            # Remove empty parameters to avoid API errors
-            payload = {k: v for k, v in payload.items() if v}
-
-            # 4. Execute API Post for the current token
-            try:
-                response = requests.post(url, data=payload, timeout=20)
-                response_data = response.json()
-
-                if response.status_code == 200 and 'id' in response_data:
-                    post_id = response_data['id']
-                    success_count += 1
-                    # Update status in the main thread
-                    self.after(0, lambda post_id=post_id: self.status_label.configure(
-                        text=f"[{i + 1}/{len(valid_tokens)}] ✅ SUCCESS! Post ID: {post_id}",
-                        text_color=self.SUCCESS_COLOR))
-                else:
-                    error_detail = response_data.get('error', {}).get('message', 'Unknown API Error')
-                    error_code = response_data.get('error', {}).get('code', 'N/A')
-                    # Update status in the main thread
-                    self.after(0, lambda: self.status_label.configure(
-                        text=f"[{i + 1}/{len(valid_tokens)}] ❌ FAIL (Code {error_code}): {error_detail[:50]}...",
-                        text_color=self.DANGER_COLOR))
-
-            except requests.exceptions.RequestException as e:
-                # Update status in the main thread
-                self.after(0, lambda: self.status_label.configure(
-                    text=f"[{i + 1}/{len(valid_tokens)}] ❌ NETWORK ERROR: Failed to reach Facebook API.",
-                    text_color=self.DANGER_COLOR))
-
-            # Pause between posts to prevent rate-limiting (optional, but highly recommended)
-            time.sleep(2)  # 2-second delay between posts
-
-        final_message = f"✅ POSTING COMPLETE. Total successful posts: {success_count} / {len(valid_tokens)}"
-        self.after(0, lambda: self.status_label.configure(text=final_message, text_color=self.SUCCESS_COLOR))
+    # --- REMOVED Facebook API Methods ---
 
     # --- New ADB Utility Methods for Airplane Mode ---
 
@@ -1404,96 +637,13 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
 
     # --- Existing ADB Utility Methods ---
 
-    def set_brightness(self, value):
-        """Sets the screen brightness via ADB settings put command (0-255)."""
-        if not self.devices:
-            self.status_label.configure(text="⚠️ No devices detected.", text_color="#ffc107")
-            return
+    # --- REMOVED set_brightness ---
 
-        # Ensure value is an integer and within the valid range
-        brightness_level = int(float(value))
-        if not 0 <= brightness_level <= 255:
-            brightness_level = max(0, min(255, brightness_level))
+    # --- REMOVED toggle_mute ---
 
-        # Update slider position (useful when clicking preset buttons)
-        self.brightness_slider.set(brightness_level)
+    # --- REMOVED reboot_devices ---
 
-        self.status_label.configure(text=f"[CMD] Setting Brightness: {brightness_level} on all devices...",
-                                    text_color=self.ACCENT_COLOR)
-
-        # Set screen brightness (0-255)
-        brightness_cmd = ['shell', 'settings', 'put', 'system', 'screen_brightness', str(brightness_level)]
-
-        # Set screen brightness mode to manual (0) to allow settings to take effect
-        mode_cmd = ['shell', 'settings', 'put', 'system', 'screen_brightness_mode', '0']
-
-        for serial in self.devices:
-            # Need to run both mode and brightness commands
-            self.executor.submit(run_adb_command, mode_cmd, serial)
-            self.executor.submit(run_adb_command, brightness_cmd, serial)
-
-        self.status_label.configure(text=f"✅ BRIGHTNESS SET to {brightness_level}.",
-                                    text_color=self.SUCCESS_COLOR)
-
-    def toggle_mute(self):
-        """Toggles the volume mute state."""
-        if not self.devices:
-            self.status_label.configure(text="⚠️ No devices detected.", text_color="#ffc107")
-            return
-
-        keycode = '23'  # KEYCODE_MUTE (or KEYCODE_VOLUME_MUTE)
-
-        if self.is_muted:
-            # If currently muted, un-mute (send key event)
-            self.mute_button.configure(text="MUTE 🔇", fg_color="#3A3A3A", hover_color="#555555")
-            self.status_label.configure(text="[CMD] Unmuting volume...", text_color=self.ACCENT_COLOR)
-            self.is_muted = False
-        else:
-            # If currently unmuted, mute (send key event)
-            self.mute_button.configure(text="UNMUTE 🔊", fg_color=self.DANGER_COLOR, hover_color="#CC4028",
-                                       text_color=self.ACCENT_COLOR)
-            self.status_label.configure(text="[CMD] Muting volume...", text_color=self.ACCENT_COLOR)
-            self.is_muted = True
-
-        command = ['shell', 'input', 'keyevent', keycode]
-        for serial in self.devices:
-            self.executor.submit(run_adb_command, command, serial)
-
-        self.status_label.configure(text=f"✅ Volume toggle submitted.", text_color=self.SUCCESS_COLOR)
-
-    def reboot_devices(self):
-        """Reboots all connected devices."""
-        if not self.devices:
-            self.status_label.configure(text="⚠️ No devices detected.", text_color="#ffc107")
-            return
-
-        if not messagebox.askyesno("Confirm Action", "Are you sure you want to REBOOT all connected devices?"):
-            return
-
-        self.status_label.configure(text="[CMD] Rebooting all connected devices...", text_color=self.WARNING_COLOR)
-        command = ['reboot']
-        for device_serial in self.devices:
-            self.executor.submit(run_adb_command, command, device_serial)
-
-        # Redetect devices after a short delay, as rebooting devices disappear and reappear
-        self.after(2000, self.detect_devices)
-
-    def shutdown_devices(self):
-        """Sends a power off command to all connected devices."""
-        if not self.devices:
-            self.status_label.configure(text="⚠️ No devices detected.", text_color="#ffc107")
-            return
-
-        if not messagebox.askyesno("Confirm Action", "Are you sure you want to POWER OFF all connected devices?"):
-            return
-
-        self.status_label.configure(text="[CMD] Shutting down all connected devices...", text_color=self.DANGER_COLOR)
-        command = ['shell', 'reboot', '-p']  # ADB command for poweroff
-        for device_serial in self.devices:
-            self.executor.submit(run_adb_command, command, device_serial)
-
-        # Redetect devices to clear the list
-        self.after(2000, self.detect_devices)
+    # --- REMOVED shutdown_devices ---
 
     def browse_apk_file(self):
         """Opens a file dialog to select an APK file."""
@@ -1542,33 +692,7 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
             self.status_label.configure(text=f"❌ INSTALLATION FAILED on {error_count} device(s).",
                                         text_color=self.DANGER_COLOR)
 
-    def run_custom_shell_command(self):
-        """Runs a user-defined ADB shell command on all connected devices."""
-        custom_cmd_str = self.custom_cmd_entry.get().strip()
-        if not custom_cmd_str:
-            self.status_label.configure(text="⚠️ Please enter a shell command to run.", text_color="#ffc107")
-            return
-
-        if not self.devices:
-            self.status_label.configure(text="⚠️ No devices detected.", text_color="#ffc107")
-            return
-
-        # Prepare the command: split the string into a list of arguments
-        try:
-            custom_args = custom_cmd_str.split()
-            command = ['shell'] + custom_args
-
-        except Exception:
-            self.status_label.configure(text="❌ Invalid command format.", text_color=self.DANGER_COLOR)
-            return
-
-        self.status_label.configure(text=f"[CMD] Running custom command: '{custom_cmd_str}'",
-                                    text_color=self.ACCENT_COLOR)
-
-        for device_serial in self.devices:
-            self.executor.submit(run_adb_command, command, device_serial)
-
-        self.status_label.configure(text=f"✅ Custom command submitted to all devices.", text_color=self.SUCCESS_COLOR)
+    # --- REMOVED run_custom_shell_command ---
 
     # --- Existing Methods (Updated for Styling) ---
 
@@ -1659,7 +783,11 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
             # --- MODIFICATION ---
             # Automatically stop any running loop if a new file is selected
             if self.is_auto_typing.is_set():
-                self.toggle_auto_type_loop()
+                self.stop_auto_type_loop()
+
+            # --- NEW: Automatically start the loop with the new file ---
+            # We add a small delay to ensure the stop command is fully processed
+            self.after(100, self.start_auto_type_loop)
 
     def _threaded_send_text(self):
         # ... (Implementation remains the same, adjusted status text colors)
@@ -1703,19 +831,11 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
         send_thread = threading.Thread(target=self._threaded_send_text, daemon=True)
         send_thread.start()
 
-    # --- NEW METHOD: Toggles the auto-type loop ---
-    def toggle_auto_type_loop(self):
-        """
-        Toggles the 'while true' loop for finding, clicking, and typing.
-        """
+    # --- NEW METHODS: Refactored auto-type logic ---
+    def start_auto_type_loop(self):
+        """Starts the auto-type loop if it is not already running."""
         if self.is_auto_typing.is_set():
-            # --- STOP THE LOOP ---
-            self.is_auto_typing.clear()
-            self.find_click_type_button.configure(text="START AUTO-TYPE ⌨️",
-                                                  fg_color="#3A3A3A",
-                                                  hover_color="#555555")
-            self.status_label.configure(text="[CMD] Stopping auto-type loop...", text_color=self.WARNING_COLOR)
-            return
+            return  # Already running
 
         # --- START THE LOOP ---
         file_path = self.file_path_entry.get()
@@ -1754,16 +874,42 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
         # Start the loop thread
         threading.Thread(target=self._threaded_find_click_type_LOOP, args=(clean_lines,), daemon=True).start()
 
+    def stop_auto_type_loop(self):
+        """Stops the auto-type loop and resets the button."""
+        self.is_auto_typing.clear()
+
+        # Check if button exists before configuring (in case window is closing)
+        if hasattr(self, 'find_click_type_button') and self.find_click_type_button.winfo_exists():
+            self.find_click_type_button.configure(text="START AUTO-TYPE ⌨️",
+                                                  fg_color="#3A3A3A",
+                                                  hover_color="#555555")
+
+        # --- REMOVED STATUS LABEL UPDATE ---
+        # if hasattr(self, 'status_label') and self.status_label.winfo_exists():
+        #     # Only update status if it's not a global stop
+        #     if not is_stop_requested.is_set():
+        #         self.status_label.configure(text="[CMD] Auto-type loop stopped.", text_color=self.ACCENT_COLOR)
+
+    def toggle_auto_type_loop(self):
+        """
+        Toggles the 'while true' loop for finding, clicking, and typing.
+        (Linked to the button)
+        """
+        if self.is_auto_typing.is_set():
+            self.stop_auto_type_loop()
+        else:
+            self.start_auto_type_loop()
+
     def _threaded_find_click_type_LOOP(self, clean_lines):
         """
         The main 'while true' loop for auto-typing.
-        Ang loop ay magsa-success at magbe-break pagkatapos ng ISANG cycle.
+        It continues looping until at least one device successfully finds an EditText and types.
         """
-        try:
-            # Loop will run AT LEAST once since self.is_auto_typing is set
-            while self.is_auto_typing.is_set() and not is_stop_requested.is_set():
-                print("\n🔄 Starting new auto-type cycle...")
+        success_achieved = False
 
+        try:
+            # Re-enable the loop using the self.is_auto_typing flag
+            while self.is_auto_typing.is_set() and not is_stop_requested.is_set():
                 if not self.devices:
                     self.after(0, lambda: self.status_label.configure(text="⚠️ No devices, stopping loop.",
                                                                       text_color="#ffc107"))
@@ -1776,37 +922,36 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
                         break
 
                     random_text = random.choice(clean_lines)
+                    # Note: We must know the result of each execution
                     futures.append(self.executor.submit(self._run_find_click_type_on_device, serial, random_text))
 
                 # Wait for this cycle to finish
-                if futures:
-                    concurrent.futures.wait(futures)
+                concurrent.futures.wait(futures)
 
-                    # OPTIONAL: Kung gusto mong i-check ang results para sa errors, gawin dito:
-                    # for future in futures:
-                    #     if future.exception() is not None:
-                    #         print(f"    ❌ Error on device: {future.exception()}")
+                # Check results: Did ANY device succeed in typing?
+                cycle_success = False
+                for future in futures:
+                    if future.exception() is None:
+                        # The result of _run_find_click_type_on_device is (bool success, str message)
+                        success, _ = future.result()
+                        if success:
+                            cycle_success = True
+                            success_achieved = True
+                            # We don't break here, let other devices finish their task in this cycle
 
-                # Check for stop signals again
-                if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
-                    break
+                if success_achieved:
+                    self.after(0, lambda: self.status_label.configure(
+                        text="✅ AUTO-TYPE SUCCESSFUL (Found & Typed). Stopping loop.", text_color=self.SUCCESS_COLOR))
+                    break  # Exit the while loop
 
-                # I-update ang status at mag-break
-                self.after(0, lambda: self.status_label.configure(
-                    text="[SUCCESS] Auto-type cycle complete. Stopping loop.", text_color=self.ACCENT_COLOR))
-
-                # ITO ANG NAGPAPATIGIL NG LOOP MATAPOS ANG ISANG SUCCESSFUL RUN
-                break
-
-                # Old sleep code removed, as we want to break immediately after success
 
         except Exception as e:
             print(f"Error in auto-type loop: {e}")
-            # Tanggalin ang 'pass' at gawing visible ang error para sa debugging
+            self.after(0, lambda: self.status_label.configure(
+                text=f"❌ CRITICAL ERROR in auto-type task: {e}", text_color=self.DANGER_COLOR))
         finally:
-            # Loop ended (either by toggle, global stop, or successful completion/break)
-            # Reset the button in the main thread
-            self.after(0, self.reset_auto_type_button)
+            # Ensure the flag and button are reset when the loop breaks or errors
+            self.after(0, self.stop_auto_type_loop)
 
     def _run_find_click_type_on_device(self, serial, text_to_send):
         """
@@ -1816,67 +961,81 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
         local_xml_file = f"ui_dump_{serial}_{uuid.uuid4()}.xml"
 
         try:
-            # Step 1: Dump UI
-            dump_cmd = ['shell', 'uiautomator', 'dump', '/data/local/tmp/ui.xml']
-            success, out = run_adb_command(dump_cmd, serial)
-            if not success:
-                # print(f"[{serial}] Failed to dump UI.")
-                return False, "Failed to dump UI"
+            if self.is_auto_typing.is_set() and not is_stop_requested.is_set():
+                # Step 1: Dump UI
+                dump_cmd = ['shell', 'uiautomator', 'dump', '/data/local/tmp/ui.xml']
+                success, out = run_adb_command(dump_cmd, serial)
+                if not success:
+                    # print(f"[{serial}] Failed to dump UI.")
+                    return False, "Failed to dump UI"
+            else:
+                return False, "Stop requested"
 
-            # Step 2: Pull XML
-            pull_cmd = ['pull', '/data/local/tmp/ui.xml', local_xml_file]
-            success, out = run_adb_command(pull_cmd, serial)
-            if not success:
-                # print(f"[{serial}] Failed to pull UI XML.")
-                return False, "Failed to pull UI XML"
+            if self.is_auto_typing.is_set() and not is_stop_requested.is_set():
+                # Step 2: Pull XML
+                pull_cmd = ['pull', '/data/local/tmp/ui.xml', local_xml_file]
+                success, out = run_adb_command(pull_cmd, serial)
+                if not success:
+                    # print(f"[{serial}] Failed to pull UI XML.")
+                    return False, "Failed to pull UI XML"
+            else:
+                return False, "Stop requested"
 
-            # Step 3: Parse XML
-            if not os.path.exists(local_xml_file):
-                # print(f"[{serial}] XML file not found locally.")
-                return False, "XML file not found"
+            if self.is_auto_typing.is_set() and not is_stop_requested.is_set():
+                # Step 3: Parse XML
+                if not os.path.exists(local_xml_file):
+                    # print(f"[{serial}] XML file not found locally.")
+                    return False, "XML file not found"
 
-            tree = ET.parse(local_xml_file)
-            root = tree.getroot()
+                tree = ET.parse(local_xml_file)
+                root = tree.getroot()
 
-            # Step 4: Find EditText
-            # Find the first node with class="android.widget.EditText"
-            edit_text_node = root.find('.//node[@class="android.widget.EditText"]')
+                # Step 4: Find EditText
+                # Find the first node with class="android.widget.EditText"
+                edit_text_node = root.find('.//node[@class="android.widget.EditText"]')
 
-            if edit_text_node is None:
-                # print(f"[{serial}] No EditText found.")
-                return False, "No EditText found"
+                if edit_text_node is None:
+                    # print(f"[{serial}] No EditText found.")
+                    return False, "No EditText found"
 
-            # Step 5: Get Bounds
-            bounds_str = edit_text_node.get('bounds')  # e.g., "[100,200][300,400]"
-            if not bounds_str:
-                # print(f"[{serial}] EditText found but has no bounds.")
-                return False, "EditText has no bounds"
+                # Step 5: Get Bounds
+                bounds_str = edit_text_node.get('bounds')  # e.g., "[100,200][300,400]"
+                if not bounds_str:
+                    # print(f"[{serial}] EditText found but has no bounds.")
+                    return False, "EditText has no bounds"
 
-            coords = re.findall(r'\d+', bounds_str)
-            if len(coords) < 4:
-                # print(f"[{serial}] Invalid bounds string.")
-                return False, "Invalid bounds string"
+                coords = re.findall(r'\d+', bounds_str)
+                if len(coords) < 4:
+                    # print(f"[{serial}] Invalid bounds string.")
+                    return False, "Invalid bounds string"
 
-            x1, y1, x2, y2 = map(int, coords[:4])
+                x1, y1, x2, y2 = map(int, coords[:4])
 
-            # Step 6: Calculate Center
-            tap_x = (x1 + x2) // 2
-            tap_y = (y1 + y2) // 2
+                # Step 6: Calculate Center
+                tap_x = (x1 + x2) // 2
+                tap_y = (y1 + y2) // 2
 
-            # Step 7: Click
-            tap_cmd = ['shell', 'input', 'tap', str(tap_x), str(tap_y)]
-            success, out = run_adb_command(tap_cmd, serial)
-            if not success:
-                # print(f"[{serial}] Failed to tap.")
-                return False, "Failed to tap"
+            else:
+                return False, "Stop requested"
 
-            # Short delay after tapping before typing
-            time.sleep(0.5)
+            if self.is_auto_typing.is_set() and not is_stop_requested.is_set():
+                # Step 7: Click
+                tap_cmd = ['shell', 'input', 'tap', str(tap_x), str(tap_y)]
+                success, out = run_adb_command(tap_cmd, serial)
+                if not success:
+                    # print(f"[{serial}] Failed to tap.")
+                    return False, "Failed to tap"
 
-            # Step 8: Type
-            run_text_command(text_to_send, serial)
-            # print(f"[{serial}] Click and type successful.")
-            return True, "Success"
+                # Mas matagal na delay para masigurong lalabas ang keyboard at handa na ang device.
+                time.sleep(3) # <-- BINAGO ang halaga para sa mas matibay na operasyon.
+
+            if self.is_auto_typing.is_set() and not is_stop_requested.is_set():
+                # Step 8: Type
+                run_text_command(text_to_send, serial)
+                # print(f"[{serial}] Click and type successful.")
+                return True, "Success"
+            else:
+                return False, "Stop requested"
 
         except ET.ParseError:
             # print(f"[{serial}] Failed to parse XML.")
@@ -1888,21 +1047,6 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
             # Step 9: Cleanup
             if os.path.exists(local_xml_file):
                 os.remove(local_xml_file)
-
-    def reset_auto_type_button(self):
-        """Resets the auto-type button to its 'START' state."""
-        self.is_auto_typing.clear()
-
-        # Check if button exists before configuring (in case window is closing)
-        if hasattr(self, 'find_click_type_button') and self.find_click_type_button.winfo_exists():
-            self.find_click_type_button.configure(text="START AUTO-TYPE ⌨️",
-                                                  fg_color="#3A3A3A",
-                                                  hover_color="#555555")
-
-        if hasattr(self, 'status_label') and self.status_label.winfo_exists():
-            # Only update status if it's not a global stop
-            if not is_stop_requested.is_set():
-                self.status_label.configure(text="[CMD] Auto-type loop Done.", text_color=self.ACCENT_COLOR)
 
     # --- End of new methods ---
 
@@ -2421,102 +1565,9 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
             self.executor.submit(run_adb_command, command, device_serial)
         self.status_label.configure(text="✅ Force stopped Facebook Lite on all devices.", text_color=self.SUCCESS_COLOR)
 
-    def open_tiktok_lite_deeplink(self):
-        # ... (Implementation remains the same, adjusted status text colors)
-        post_url = self.tiktok_url_entry.get()
-        if not post_url or not self.devices:
-            self.status_label.configure(text="⚠️ Check URL and devices.", text_color="#ffc107")
-            return
+    # --- REMOVED TikTok Methods ---
 
-        self.status_label.configure(text=f"[CMD] Opening TikTok URL...", text_color=self.ACCENT_COLOR)
-
-        command = [
-            'shell', 'am', 'start',
-            '-a', 'android.intent.action.VIEW',
-            '-d', f'"{post_url}"',
-            'com.zhiliaoapp.musically.go'
-        ]
-        for device_serial in self.devices:
-            self.executor.submit(run_adb_command, command, device_serial)
-        self.status_label.configure(text="✅ Visited TikTok post on all devices.", text_color=self.SUCCESS_COLOR)
-
-    def launch_tiktok_lite(self):
-        # ... (Implementation remains the same, adjusted status text colors)
-        if not self.devices:
-            self.status_label.configure(text="⚠️ No devices detected.", text_color="#ffc107")
-            return
-
-        self.status_label.configure(text=f"[CMD] Launching TikTok Lite...", text_color=self.ACCENT_COLOR)
-
-        command = ['shell', 'am', 'start', '-n',
-                   'com.zhiliaoapp.musically.go/com.ss.android.ugc.aweme.main.homepage.MainActivity']
-        for device_serial in self.devices:
-            self.executor.submit(run_adb_command, command, device_serial)
-        self.status_label.configure(text="✅ Launched TikTok Lite on all devices.", text_color=self.SUCCESS_COLOR)
-
-    def force_stop_tiktok_lite(self):
-        # ... (Implementation remains the same, adjusted status text colors)
-        if not self.devices:
-            self.status_label.configure(text="⚠️ No devices detected.", text_color="#ffc107")
-            return
-
-        self.status_label.configure(text=f"[CMD] Force stopping TikTok Lite...", text_color=self.DANGER_COLOR)
-
-        command = ['shell', 'am', 'force-stop', 'com.zhiliaoapp.musically.go']
-        for device_serial in self.devices:
-            self.executor.submit(run_adb_command, command, device_serial)
-        self.status_label.configure(text="✅ Force stopped TikTok Lite on all devices.", text_color=self.SUCCESS_COLOR)
-
-    def open_youtube_deeplink(self):
-        # ... (Implementation remains the same, adjusted status text colors)
-        video_url = self.youtube_url_entry.get()
-        if not video_url or not self.devices:
-            self.status_label.configure(text="⚠️ Check URL and devices.", text_color="#ffc107")
-            return
-
-        self.status_label.configure(text=f"[CMD] Opening YouTube video in Chrome...", text_color=self.ACCENT_COLOR)
-
-        # Using Chrome intent for YouTube video viewing
-        command = [
-            'shell', 'am', 'start',
-            '-a', 'android.intent.action.VIEW',
-            '-d', f'"{video_url}"',
-            'com.android.chrome/com.google.android.apps.chrome.Main'
-        ]
-        for device_serial in self.devices:
-            self.executor.submit(run_adb_command, command, device_serial)
-        self.status_label.configure(text="✅ Visited video on all devices.", text_color=self.SUCCESS_COLOR)
-
-    def launch_youtube(self):
-        # ... (Implementation remains the same, adjusted status text colors)
-        if not self.devices:
-            self.status_label.configure(text="⚠️ No devices detected.", text_color="#ffc107")
-            return
-
-        self.status_label.configure(text=f"[CMD] Launching YouTube (via Chrome)...", text_color=self.ACCENT_COLOR)
-
-        command = [
-            'shell', 'am', 'start',
-            '-a', 'android.intent.action.VIEW',
-            '-d', 'https://m.youtube.com/',
-            'com.android.chrome/com.google.android.apps.chrome.Main'
-        ]
-        for device_serial in self.devices:
-            self.executor.submit(run_adb_command, command, device_serial)
-        self.status_label.configure(text="✅ Launched YouTube on all devices.", text_color=self.SUCCESS_COLOR)
-
-    def force_stop_youtube(self):
-        # ... (Implementation remains the same, adjusted status text colors)
-        if not self.devices:
-            self.status_label.configure(text="⚠️ No devices detected.", text_color="#ffc107")
-            return
-
-        self.status_label.configure(text=f"[CMD] Force stopping Chrome...", text_color=self.DANGER_COLOR)
-
-        command = ['shell', 'am', 'force-stop', 'com.android.chrome']
-        for device_serial in self.devices:
-            self.executor.submit(run_adb_command, command, device_serial)
-        self.status_label.configure(text="✅ Force stopped Chrome on all devices.", text_color=self.SUCCESS_COLOR)
+    # --- REMOVED YouTube Methods ---
 
     def share_image_to_fb_lite(self):
         # ... (Implementation remains the same, adjusted status text colors)
@@ -2546,7 +1597,7 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
         is_stop_requested.set()
 
         # --- NEW: Also clear the auto-type flag ---
-        self.is_auto_typing.clear()
+        self.stop_auto_type_loop()  # Use new function
 
         # Wait for all current tasks to finish (or be terminated)
         self.executor.shutdown(wait=True)
@@ -2557,12 +1608,8 @@ ADB Path Ensure that ADB (Android Debug Bridge) is installed and added to your s
 
         self.status_label.configure(text="✅ ALL OPERATIONS TERMINATED. Ready.", text_color=self.SUCCESS_COLOR)
 
-        # Also reset the button state just in case
-        self.reset_auto_type_button()
-
 
 if __name__ == '__main__':
     multiprocessing.freeze_support()
     app = AdbControllerApp()
     app.mainloop()
-
