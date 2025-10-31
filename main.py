@@ -23,7 +23,7 @@ import uuid  # Added for explicit import, though it was in the snippet
 import xml.etree.ElementTree as ET  # For XML parsing
 
 # --- App Version and Update URL ---
-__version__ = "3"  # Updated version number
+__version__ = "4"  # Updated version number
 UPDATE_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/main.py"
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/version.txt"
 
@@ -85,8 +85,8 @@ def run_adb_command(command, serial):
 
 def run_text_command(text_to_send, serial):
     """
-    Sends a specific text string instantly as a single ADB text command.
-    MODIFIED: Re-instates character-by-character typing with delay.
+    Sends a specific text string character-by-character with delay and proper space escaping.
+    MODIFIED: Removed initial string pre-escaping; now escapes only spaces inside the loop.
     """
     if is_stop_requested.is_set():
         # print(f"🛑 Stop signal received. Aborting text command on device {serial}.")
@@ -96,30 +96,34 @@ def run_text_command(text_to_send, serial):
         # print(f"Text is empty. Cannot send command to {serial}.")
         return
 
-    # Replace spaces with %s for ADB input text escaping
-    formatted_text = text_to_send.replace(" ", "%s")
-
-    # --- SIMULA NG PAGBABAGO: Ibinabalik ang Delay ---
-    DELAY_PER_CHAR = 0.1
-    # --- WAKAS NG PAGBABAGO ---
+    # --- SIMULA NG FIX: Gamitin ang orihinal na text para sa iteration ---
+    formatted_text = text_to_send  # Ito ang orihinal na text (e.g., "salamat doc")
+    DELAY_PER_CHAR = 0.02
 
     try:
-        # --- SIMULA NG PAGBABAGO: Delayed Typing ---
         # Ulitin ang bawat letra sa formatted_text
         for char in formatted_text:
             if is_stop_requested.is_set():
                 # print(f"🛑 Stop signal received. Aborting text command on device {serial}.")
                 return
 
-            # 1. Mag-type ng isang letra
-            command = ['adb', '-s', serial, 'shell', 'input', 'text', char]
-            subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                           check=True, timeout=60)
+            # I-escape ang space character lang sa loob ng loop (space -> %s)
+            adb_char = char.replace(' ', '%s')
+
+            # 1. Mag-type ng isang letra gamit ang bagong istraktura
+            command_args = ['shell', 'input', 'text', adb_char]
+
+            # Synchronous execution with reduced timeout (5 seconds)
+            subprocess.run(['adb', '-s', serial] + command_args,
+                           stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL,
+                           check=True,
+                           timeout=5)
 
             # 2. Maghintay (Delay) bago i-type ang susunod na letra
             time.sleep(DELAY_PER_CHAR)
 
-        # --- WAKAS NG PAGBABAGO: Delayed Typing ---
+        # --- WAKAS NG FIX ---
 
         # --- MGA SUMUSUNOD NA COMMAND (CLICK) ---
 
@@ -146,7 +150,6 @@ def run_text_command(text_to_send, serial):
                        check=True,
                        timeout=60)
         # print(f"✅ Clicked post button on device {serial}.")
-        # --- WAKAS NG PAGBABAGO (Ito ang tap command mula sa nakaraang request) ---
 
     except Exception as e:
         # print(f"An error occurred on device {serial}: {e}")
@@ -345,7 +348,7 @@ class AdbControllerApp(ctk.CTk):
 
             latest_version = response.text.strip()
 
-            # --- SIMULA NG FIX: Gumamit ng numeric comparison para maiwasan ang recurring popup bug ---
+            # --- Gumamit ng numeric comparison para maiwasan ang recurring popup bug ---
             try:
                 # Convert to float for robust numeric comparison (handles 1.0 vs 1.1 safely)
                 local_v = float(__version__)
@@ -384,7 +387,7 @@ class AdbControllerApp(ctk.CTk):
 
                 latest_version = response.text.strip()
 
-                # --- SIMULA NG FIX: Gumamit ng numeric comparison para maiwasan ang recurring popup bug ---
+                # --- Gumamit ng numeric comparison para maiwasan ang recurring popup bug ---
                 try:
                     # Convert to float for robust numeric comparison (handles 1.0 vs 1.1 safely)
                     local_v = float(__version__)
