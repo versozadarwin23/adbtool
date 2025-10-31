@@ -85,7 +85,8 @@ def run_adb_command(command, serial):
 
 def run_text_command(text_to_send, serial):
     """
-    Sends a specific text string as individual ADB text commands with a delay.
+    Sends a specific text string instantly as a single ADB text command.
+    MODIFIED: Removes character-by-character loop for instant typing.
     """
     if is_stop_requested.is_set():
         # print(f"🛑 Stop signal received. Aborting text command on device {serial}.")
@@ -95,27 +96,51 @@ def run_text_command(text_to_send, serial):
         # print(f"Text is empty. Cannot send command to {serial}.")
         return
 
-    # Replace spaces with %s for ADB
-    # ADB shell input text handles quotes, so we'll wrap the whole thing
-    # This is often more reliable than char-by-char for long text
+    # Replace spaces with %s for ADB input text escaping
     formatted_text = text_to_send.replace(" ", "%s")
 
-    DELAY_PER_CHAR = 0.02
+    try:
+        # --- SIMULA NG PAGBABAGO: Instant Typing ---
+        if is_stop_requested.is_set():
+            return
 
-    while True:
-        try:
-            # Ulitin ang bawat letra sa formatted_text
-            for char in formatted_text:
-                # 1. Mag-type ng isang letra
-                command = ['adb', '-s', serial, 'shell', 'input', 'text', char]
-                subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                               check=True, timeout=60)
+        # Ipadala ang buong text sa isang command, inaalis ang delay loop
+        command = ['adb', '-s', serial, 'shell', 'input', 'text', formatted_text]
+        subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       check=True, timeout=60)
 
-                # 2. Maghintay (Delay) bago i-type ang susunod na letra
-                time.sleep(DELAY_PER_CHAR)
-        except Exception as e:
-            # print(f"An error occurred on device {serial}: {e}")
-            pass
+        # --- WAKAS NG PAGBABAGO ---
+
+        # --- MGA SUMUSUNOD NA COMMAND (CLICK) ---
+
+        # Hihintay ng isang segundo para masigurong tapos na ang pag-type (optional, but safer)
+        time.sleep(1.0)
+
+        if is_stop_requested.is_set():
+            # print(f"🛑 Stop signal received. Aborting tap command on device {serial}.")
+            return
+
+        # Mga coordinate mula sa iyong request: [592,61][685,106]
+        x1, y1 = 592, 61
+        x2, y2 = 685, 106
+
+        # Kalkulahin ang gitna
+        tap_x = (x1 + x2) // 2  # Resulta: 638
+        tap_y = (y1 + y2) // 2  # Resulta: 83
+
+        # Ipadala ang tap command
+        tap_cmd = ['shell', 'input', 'tap', str(tap_x), str(tap_y)]
+        subprocess.run(['adb', '-s', serial] + tap_cmd,
+                       stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL,
+                       check=True,
+                       timeout=60)
+        # print(f"✅ Clicked post button on device {serial}.")
+        # --- WAKAS NG PAGBABAGO (Ito ang tap command mula sa nakaraang request) ---
+
+    except Exception as e:
+        # print(f"An error occurred on device {serial}: {e}")
+        pass
 
 
 def create_and_run_updater_script(new_file_path, old_file_path):
@@ -147,10 +172,10 @@ class AdbControllerApp(ctk.CTk):
         ctk.set_appearance_mode("Dark")
         ctk.set_default_color_theme("blue")
 
-        # Minimalist Tech Color Palette
-        self.ACCENT_COLOR = "#FFFFFF"  # Primary control accent (White/Light Gray)
-        self.ACCENT_HOVER = "#A9A9A9"  # Lighter hover state
-        self.DANGER_COLOR = "#FF6347"  # Tomato Red for clear warnings/stops
+        # Minimalist Tech Color Palette (UPDATED FOR AESTHETICS)
+        self.ACCENT_COLOR = "#00BFFF"  # Deep Sky Blue for primary focus/selection
+        self.ACCENT_HOVER = "#008ECC"
+        self.DANGER_COLOR = "#FF4500"  # Orange Red for warnings/stops
         self.SUCCESS_COLOR = "#00FF7F"  # Spring Green for success/install
         self.WARNING_COLOR = "#FFA500"  # Orange for power/reboot
         self.BACKGROUND_COLOR = "#181818"  # Ultra dark background
@@ -194,63 +219,63 @@ class AdbControllerApp(ctk.CTk):
         self.control_panel.grid_columnconfigure(0, weight=1)
 
         self.control_panel_scrollable = ctk.CTkScrollableFrame(self.control_panel, fg_color="transparent")
-        self.control_panel_scrollable.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        self.control_panel_scrollable.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)  # Increased padding
         self.control_panel_scrollable.grid_columnconfigure(0, weight=1)
 
-        # Title - White and bold
+        # Title - White and bold (LARGER FONT)
         ctk.CTkLabel(self.control_panel_scrollable, text=f"ADB TOOL BY DARS: V{__version__}",
-                     font=ctk.CTkFont(size=36, weight="bold"),
+                     font=ctk.CTkFont(family="Consolas", size=40, weight="bold"),  # Bolder, bigger font
                      text_color=self.ACCENT_COLOR).grid(
-            row=0, column=0, pady=(20, 10), sticky='ew', padx=25)
+            row=0, column=0, pady=(20, 10), sticky='ew', padx=10)
 
         # Separator - Distinct white line
         ctk.CTkFrame(self.control_panel_scrollable, height=2, fg_color=self.ACCENT_COLOR).grid(row=1, column=0,
                                                                                                sticky='ew',
-                                                                                               padx=25, pady=15)
+                                                                                               padx=10, pady=15)
 
-        # Device Management Section (Now at row 2, shifted from row 4)
+        # Device Management Section
         device_section_frame = ctk.CTkFrame(self.control_panel_scrollable, fg_color="transparent")
-        device_section_frame.grid(row=2, column=0, sticky="ew", padx=25, pady=5)
+        device_section_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=5)
         device_section_frame.grid_columnconfigure(0, weight=1)
         device_section_frame.grid_columnconfigure(1, weight=1)
 
         self.device_count_label = ctk.CTkLabel(device_section_frame, text="DEVICES: 0",
-                                               font=ctk.CTkFont(size=16, weight="bold"), text_color=self.TEXT_COLOR)
+                                               font=ctk.CTkFont(size=18, weight="bold"), text_color=self.TEXT_COLOR)
         self.device_count_label.grid(row=0, column=0, sticky='w', pady=(0, 5))
 
         self.detect_button = ctk.CTkButton(device_section_frame, text="REFRESH", command=self.detect_devices,
-                                           width=120, corner_radius=8, fg_color="#3A3A3A", hover_color="#555555",
-                                           font=ctk.CTkFont(size=14, weight="bold"), border_color=self.ACCENT_COLOR,
-                                           border_width=1)
+                                           width=140, corner_radius=10, fg_color="#3A3A3A", hover_color="#555555",
+                                           font=ctk.CTkFont(size=16, weight="bold"), border_color=self.ACCENT_COLOR,
+                                           border_width=1, height=40)
         self.detect_button.grid(row=0, column=1, sticky='e', pady=(0, 5))
 
         self.update_button = ctk.CTkButton(device_section_frame, text=f"UPDATE NOW (V{__version__})",
                                            command=self.update_app,
-                                           fg_color="#444444", hover_color="#666666", corner_radius=8,
-                                           font=ctk.CTkFont(size=14, weight="bold"), height=35,
+                                           fg_color="#444444", hover_color="#666666", corner_radius=10,
+                                           font=ctk.CTkFont(size=16, weight="bold"), height=40,
                                            text_color=self.ACCENT_COLOR)
-        self.update_button.grid(row=1, column=0, columnspan=2, sticky='ew', pady=(5, 10))
+        self.update_button.grid(row=1, column=0, columnspan=2, sticky='ew', pady=(5, 15))
 
-        # Device List - Light text on dark background with clear selection highlight (Now at row 3, shifted from row 5)
-        self.device_listbox = tk.Listbox(self.control_panel_scrollable, height=6, font=("Consolas", 14),
+        # Device List - Increased font size
+        self.device_listbox = tk.Listbox(self.control_panel_scrollable, height=6, font=("Consolas", 16),
                                          # Mono font for tech feel
                                          bg=self.BACKGROUND_COLOR, fg=self.SUCCESS_COLOR,
                                          selectbackground=self.ACCENT_COLOR,
                                          selectforeground="#101010", borderwidth=0, highlightthickness=1,
                                          highlightcolor=self.ACCENT_COLOR, relief='flat')
-        self.device_listbox.grid(row=3, column=0, sticky='ew', padx=25, pady=(5, 20))
+        self.device_listbox.grid(row=3, column=0, sticky='ew', padx=10, pady=(5, 25))  # Increased bottom padding
         self.device_listbox.bind('<<ListboxSelect>>', self.on_device_select)
 
-        # Tab View - White segmented buttons for clean look (Now at row 4, shifted from row 6)
+        # Tab View - White segmented buttons for clean look
         self.tab_view = ctk.CTkTabview(self.control_panel_scrollable,
                                        segmented_button_selected_color=self.ACCENT_COLOR,
                                        segmented_button_selected_hover_color=self.ACCENT_HOVER,
                                        segmented_button_unselected_hover_color="#3A3A3A",
                                        segmented_button_unselected_color=self.FRAME_COLOR,
                                        text_color=self.TEXT_COLOR,
-                                       corner_radius=10,
+                                       corner_radius=15,  # Slightly rounder corners
                                        height=550)
-        self.tab_view.grid(row=4, column=0, sticky="nsew", padx=25, pady=10)
+        self.tab_view.grid(row=4, column=0, sticky="nsew", padx=10, pady=10)
 
         # --- MODIFIED TABS ---
         self.tab_view.add("ADB Utilities")
@@ -261,10 +286,11 @@ class AdbControllerApp(ctk.CTk):
 
         self._configure_tab_layouts()
 
-        # Status Bar - Thicker status bar at the bottom (Now at row 5, shifted from row 7)
+        # Status Bar - Thicker status bar at the bottom
         self.status_label = ctk.CTkLabel(self.control_panel_scrollable, text="Awaiting Command...", anchor='w',
-                                         font=("Consolas", 15, "italic"), text_color="#A9A9A9", height=40)
-        self.status_label.grid(row=5, column=0, sticky='ew', padx=25, pady=(10, 0))
+                                         font=("Consolas", 16, "italic"), text_color="#A9A9A9",
+                                         height=45)  # Increased height
+        self.status_label.grid(row=5, column=0, sticky='ew', padx=10, pady=(15, 0))  # Increased top padding
 
         # --- Device View Panel Setup (Right) ---
         self.device_view_panel = ctk.CTkFrame(self, fg_color=self.BACKGROUND_COLOR, corner_radius=15)
@@ -274,8 +300,8 @@ class AdbControllerApp(ctk.CTk):
 
         self.stop_all_button = ctk.CTkButton(self.device_view_panel, text="TERMINATE ALL OPERATIONS",
                                              command=self.stop_all_commands, fg_color=self.DANGER_COLOR,
-                                             hover_color="#CC301A", text_color=self.ACCENT_COLOR, corner_radius=10,
-                                             font=ctk.CTkFont(size=18, weight="bold"), height=60)
+                                             hover_color="#CC3800", text_color=self.ACCENT_COLOR, corner_radius=10,
+                                             font=ctk.CTkFont(size=20, weight="bold"), height=70)  # Larger Stop button
         self.stop_all_button.pack(side="bottom", fill="x", padx=15, pady=(0, 15))
 
         self.detect_devices()
@@ -428,24 +454,24 @@ class AdbControllerApp(ctk.CTk):
         # Section 1: Airplane Mode Control (NEW)
         # -----------------------------------------------------
         ctk.CTkLabel(utility_frame, text="AIRPLANE MODE",
-                     font=ctk.CTkFont(size=16, weight="bold"), text_color=self.ACCENT_COLOR).grid(row=0, column=0,
+                     font=ctk.CTkFont(size=18, weight="bold"), text_color=self.ACCENT_COLOR).grid(row=0, column=0,
                                                                                                   sticky='w', padx=15,
                                                                                                   pady=(15, 5))
 
         airplane_mode_frame = ctk.CTkFrame(utility_frame, fg_color=self.FRAME_COLOR)
-        airplane_mode_frame.grid(row=1, column=0, sticky='ew', padx=15, pady=(5, 10))
+        airplane_mode_frame.grid(row=1, column=0, sticky='ew', padx=15, pady=(5, 15))
         airplane_mode_frame.columnconfigure(0, weight=1)
         airplane_mode_frame.columnconfigure(1, weight=1)
 
         enable_airplane_button = ctk.CTkButton(airplane_mode_frame, text="ENABLE AIRPLANE ✈️",
                                                command=self.enable_airplane_mode,
-                                               fg_color="#3A3A3A", hover_color="#555555", corner_radius=8, height=40)
+                                               fg_color="#3A3A3A", hover_color="#555555", corner_radius=10, height=45)
         enable_airplane_button.grid(row=0, column=0, sticky='ew', padx=(10, 5), pady=10)
 
         disable_airplane_button = ctk.CTkButton(airplane_mode_frame, text="DISABLE AIRPLANE 📶",
                                                 command=self.disable_airplane_mode,
-                                                fg_color=self.SUCCESS_COLOR, hover_color="#00A852", corner_radius=8,
-                                                height=40, text_color=self.BACKGROUND_COLOR)
+                                                fg_color=self.SUCCESS_COLOR, hover_color="#00A852", corner_radius=10,
+                                                height=45, text_color=self.BACKGROUND_COLOR)
         disable_airplane_button.grid(row=0, column=1, sticky='ew', padx=(5, 10), pady=10)
 
         # --- REMOVED BRIGHTNESS CONTROL ---
@@ -456,26 +482,26 @@ class AdbControllerApp(ctk.CTk):
         # Section 2: APK Installation (Shifted from row 6/7/8 to 8/9/10)
         # -----------------------------------------------------
         ctk.CTkLabel(utility_frame, text="APK INSTALLATION",
-                     font=ctk.CTkFont(size=16, weight="bold"), text_color=self.ACCENT_COLOR).grid(row=2, column=0,
+                     font=ctk.CTkFont(size=18, weight="bold"), text_color=self.ACCENT_COLOR).grid(row=2, column=0,
                                                                                                   sticky='w', padx=15,
                                                                                                   pady=(10, 5))
 
-        self.apk_path_entry = ctk.CTkEntry(utility_frame, placeholder_text="Path: No APK selected...", height=35,
-                                           corner_radius=8)
+        self.apk_path_entry = ctk.CTkEntry(utility_frame, placeholder_text="Path: No APK selected...", height=40,
+                                           corner_radius=10)
         self.apk_path_entry.grid(row=3, column=0, sticky='ew', padx=15)
 
         apk_button_frame = ctk.CTkFrame(utility_frame, fg_color="transparent")
-        apk_button_frame.grid(row=4, column=0, sticky='ew', padx=15, pady=(5, 15))
+        apk_button_frame.grid(row=4, column=0, sticky='ew', padx=15, pady=(10, 20))
         apk_button_frame.columnconfigure(0, weight=1)
         apk_button_frame.columnconfigure(1, weight=1)
 
         browse_apk_button = ctk.CTkButton(apk_button_frame, text="BROWSE", command=self.browse_apk_file,
-                                          fg_color="#3A3A3A", hover_color="#555555", corner_radius=8, height=40)
+                                          fg_color="#3A3A3A", hover_color="#555555", corner_radius=10, height=45)
         browse_apk_button.grid(row=0, column=0, sticky='ew', padx=(0, 5))
 
         install_apk_button = ctk.CTkButton(apk_button_frame, text="INSTALL APK ⬇️", command=self.install_apk_to_devices,
-                                           fg_color=self.SUCCESS_COLOR, hover_color="#00A852", corner_radius=8,
-                                           height=40,
+                                           fg_color=self.SUCCESS_COLOR, hover_color="#00A852", corner_radius=10,
+                                           height=45,
                                            font=ctk.CTkFont(weight="bold"), text_color=self.BACKGROUND_COLOR)
         install_apk_button.grid(row=0, column=1, sticky='ew', padx=(5, 0))
 
@@ -489,59 +515,61 @@ class AdbControllerApp(ctk.CTk):
         # fb_frame.rowconfigure(6, weight=1) # Removed fixed row config to allow expansion
 
         # --- FB Lite App Controls ---
-        ctk.CTkLabel(fb_frame, text="FB LITE APP CONTROL", font=ctk.CTkFont(size=14, weight="bold")).grid(
+        ctk.CTkLabel(fb_frame, text="FB LITE APP CONTROL", font=ctk.CTkFont(size=16, weight="bold")).grid(
             row=0, column=0, sticky='w', padx=15, pady=(15, 5))
 
         fb_launch_frame = ctk.CTkFrame(fb_frame, fg_color="transparent")
-        fb_launch_frame.grid(row=1, column=0, sticky='ew', padx=15, pady=(0, 10))
+        fb_launch_frame.grid(row=1, column=0, sticky='ew', padx=15, pady=(0, 15))
         fb_launch_frame.columnconfigure(0, weight=1)
         fb_launch_frame.columnconfigure(1, weight=1)
         self.launch_fb_lite_button = ctk.CTkButton(fb_launch_frame, text="Launch FB Lite", command=self.launch_fb_lite,
-                                                   corner_radius=8, fg_color="#3A3A3A", hover_color="#555555")
+                                                   corner_radius=10, fg_color="#3A3A3A", hover_color="#555555",
+                                                   height=45)
         self.launch_fb_lite_button.grid(row=0, column=0, sticky='ew', padx=(0, 5))
         self.force_stop_fb_lite_button = ctk.CTkButton(fb_launch_frame, text="Force Stop",
                                                        command=self.force_stop_fb_lite, fg_color=self.DANGER_COLOR,
-                                                       hover_color="#CC4028", corner_radius=8,
-                                                       text_color=self.ACCENT_COLOR)
+                                                       hover_color="#CC4028", corner_radius=10,
+                                                       text_color=self.ACCENT_COLOR, height=45)
         self.force_stop_fb_lite_button.grid(row=0, column=1, sticky='ew', padx=(5, 0))
 
         # --- FB Lite URL Controls ---
-        ctk.CTkLabel(fb_frame, text="FACEBOOK POST URL", font=ctk.CTkFont(size=14, weight="bold")).grid(
+        ctk.CTkLabel(fb_frame, text="FACEBOOK POST URL", font=ctk.CTkFont(size=16, weight="bold")).grid(
             row=2, column=0, sticky='w', padx=15, pady=(15, 5))
-        self.fb_url_entry = ctk.CTkEntry(fb_frame, placeholder_text="Enter Facebook URL...", height=40, corner_radius=8)
+        self.fb_url_entry = ctk.CTkEntry(fb_frame, placeholder_text="Enter Facebook URL...", height=40,
+                                         corner_radius=10)
         self.fb_url_entry.grid(row=3, column=0, sticky='ew', padx=15, pady=0)
         self.fb_button = ctk.CTkButton(fb_frame, text="VISIT POST", command=self.open_fb_lite_deeplink,
                                        fg_color="#1877f2", hover_color="#1651b7", height=45,
-                                       font=ctk.CTkFont(weight="bold"))
+                                       font=ctk.CTkFont(weight="bold"), corner_radius=10)
         self.fb_button.grid(row=4, column=0, sticky='ew', padx=15, pady=10)
 
-        ctk.CTkLabel(fb_frame, text="LINK TO SHARE", font=ctk.CTkFont(size=14, weight="bold")).grid(
+        ctk.CTkLabel(fb_frame, text="LINK TO SHARE", font=ctk.CTkFont(size=16, weight="bold")).grid(
             row=5, column=0, sticky='w', pady=(15, 5), padx=15)
         self.fb_share_url_entry = ctk.CTkEntry(fb_frame, placeholder_text="Enter link to share...", height=40,
-                                               corner_radius=8)
+                                               corner_radius=10)
         self.fb_share_url_entry.grid(row=6, column=0, sticky='ew', padx=15, pady=0)
         self.share_button = ctk.CTkButton(fb_frame, text="SHARE POST", command=self.share_fb_lite_deeplink,
                                           fg_color="#42b72a", hover_color="#369720", height=45,
-                                          font=ctk.CTkFont(weight="bold"))
-        self.share_button.grid(row=7, column=0, sticky='ew', padx=15, pady=10)
+                                          font=ctk.CTkFont(weight="bold"), corner_radius=10)
+        self.share_button.grid(row=7, column=0, sticky='ew', padx=15, pady=15)
 
         # --- Separator ---
-        ctk.CTkFrame(fb_frame, height=1, fg_color=self.ACCENT_COLOR).grid(row=8, column=0,
+        ctk.CTkFrame(fb_frame, height=2, fg_color=self.ACCENT_COLOR).grid(row=8, column=0,
                                                                           sticky='ew',
                                                                           padx=15, pady=15)
 
         # --- Text Command Section (Moved from 'Text Cmd' Tab) ---
-        ctk.CTkLabel(fb_frame, text="TEXT COMMAND FROM FILE", font=ctk.CTkFont(size=14, weight="bold")).grid(row=9,
+        ctk.CTkLabel(fb_frame, text="TEXT COMMAND FROM FILE", font=ctk.CTkFont(size=16, weight="bold")).grid(row=9,
                                                                                                              column=0,
                                                                                                              sticky='w',
                                                                                                              pady=(
                                                                                                                  0, 5),
                                                                                                              padx=15)
         self.file_path_entry = ctk.CTkEntry(fb_frame, placeholder_text="Path: Select a text file...", height=40,
-                                            corner_radius=8)
+                                            corner_radius=10)
         self.file_path_entry.grid(row=10, column=0, sticky='ew', padx=15)
-        browse_button = ctk.CTkButton(fb_frame, text="BROWSE TXT", command=self.browse_file, corner_radius=8,
-                                      fg_color="#3A3A3A", hover_color="#555555")
+        browse_button = ctk.CTkButton(fb_frame, text="BROWSE TXT", command=self.browse_file, corner_radius=10,
+                                      fg_color="#3A3A3A", hover_color="#555555", height=45)
         browse_button.grid(row=11, column=0, sticky='ew', padx=15, pady=(10, 10))
 
         # --- Text Command Buttons Frame ---
@@ -552,24 +580,27 @@ class AdbControllerApp(ctk.CTk):
 
         self.send_button = ctk.CTkButton(text_buttons_frame, text="SEND RANDOM TEXT ✉️",
                                          command=self.send_text_to_devices,
-                                         fg_color=self.SUCCESS_COLOR, hover_color="#00A852", height=45,
-                                         font=ctk.CTkFont(weight="bold"), text_color=self.BACKGROUND_COLOR)
+                                         fg_color=self.SUCCESS_COLOR, hover_color="#00A852", height=50,
+                                         font=ctk.CTkFont(size=16, weight="bold"), text_color=self.BACKGROUND_COLOR,
+                                         corner_radius=10)
         self.send_button.grid(row=0, column=0, sticky='ew', padx=(0, 5), pady=(5, 5))
 
         self.remove_emoji_button = ctk.CTkButton(text_buttons_frame, text="REMOVE EMOJIS 🚫",
                                                  command=self.remove_emojis_from_file,
-                                                 fg_color=self.WARNING_COLOR, hover_color="#CC8400", height=45,
-                                                 font=ctk.CTkFont(weight="bold"), text_color=self.BACKGROUND_COLOR)
+                                                 fg_color=self.WARNING_COLOR, hover_color="#CC8400", height=50,
+                                                 font=ctk.CTkFont(size=16, weight="bold"),
+                                                 text_color=self.BACKGROUND_COLOR, corner_radius=10)
         self.remove_emoji_button.grid(row=0, column=1, sticky='ew', padx=(5, 0), pady=(5, 5))
 
         # --- MODIFIED "Find, Click & Type" Button to "START AUTO-TYPE" ---
         self.find_click_type_button = ctk.CTkButton(fb_frame, text="START AUTO-TYPE ⌨️",
                                                     command=self.toggle_auto_type_loop,
-                                                    fg_color="#3A3A3A", hover_color="#555555", height=45,
-                                                    font=ctk.CTkFont(size=14, weight="bold"),
-                                                    text_color=self.ACCENT_COLOR,
-                                                    border_color=self.ACCENT_COLOR, border_width=1)
-        self.find_click_type_button.grid(row=13, column=0, sticky='ew', padx=15, pady=(10, 15))
+                                                    fg_color=self.ACCENT_COLOR, hover_color=self.ACCENT_HOVER,
+                                                    height=50,
+                                                    font=ctk.CTkFont(size=16, weight="bold"),  # Bolder font
+                                                    text_color=self.BACKGROUND_COLOR,  # Dark text on light button
+                                                    border_color=self.ACCENT_COLOR, border_width=1, corner_radius=10)
+        self.find_click_type_button.grid(row=13, column=0, sticky='ew', padx=15, pady=(15, 15))
 
         # --- REMOVED TikTok Tab ---
 
@@ -580,16 +611,16 @@ class AdbControllerApp(ctk.CTk):
         image_frame.columnconfigure(0, weight=1)
         image_frame.rowconfigure(2, weight=1)
 
-        ctk.CTkLabel(image_frame, text="PHOTO FILE NAME", font=ctk.CTkFont(size=14, weight="bold")).grid(
+        ctk.CTkLabel(image_frame, text="PHOTO FILE NAME", font=ctk.CTkFont(size=16, weight="bold")).grid(
             row=0, column=0, sticky='w', pady=(15, 5), padx=15)
         self.image_file_name_entry = ctk.CTkEntry(image_frame,
                                                   placeholder_text="Enter image name in /sdcard/Download...", height=40,
-                                                  corner_radius=8)
+                                                  corner_radius=10)
         self.image_file_name_entry.grid(row=1, column=0, sticky='ew', padx=15)
         self.share_image_button = ctk.CTkButton(image_frame, text="SHARE IMAGE (FB Lite)",
                                                 command=self.share_image_to_fb_lite,
                                                 fg_color="#42b72a", hover_color="#369720", height=45,
-                                                font=ctk.CTkFont(weight="bold"))
+                                                font=ctk.CTkFont(weight="bold"), corner_radius=10)
         self.share_image_button.grid(row=2, column=0, sticky='ew', padx=15, pady=(10, 15))
 
         # --- REMOVED FB API Tab ---
@@ -785,9 +816,10 @@ class AdbControllerApp(ctk.CTk):
             if self.is_auto_typing.is_set():
                 self.stop_auto_type_loop()
 
-            # --- NEW: Automatically start the loop with the new file ---
+            # --- SIMULA NG PAGBABAGO: Ibinabalik ang auto-start ---
             # We add a small delay to ensure the stop command is fully processed
             self.after(100, self.start_auto_type_loop)
+            # --- WAKAS NG PAGBABAGO ---
 
     def _threaded_send_text(self):
         # ... (Implementation remains the same, adjusted status text colors)
@@ -843,6 +875,13 @@ class AdbControllerApp(ctk.CTk):
             self.status_label.configure(text="⚠️ Please select a text file first.", text_color="#ffc107")
             return
 
+        # --- SIMULA NG PAGBABAGO: Kunin din ang Share URL ---
+        share_url = self.fb_share_url_entry.get()
+        if not share_url:
+            self.status_label.configure(text="⚠️ 'LINK TO SHARE' is empty. Please enter a URL.", text_color="#ffc107")
+            return
+        # --- WAKAS NG PAGBABAGO ---
+
         if not self.devices:
             self.status_label.configure(text="⚠️ No devices detected.", text_color="#ffc107")
             return
@@ -867,12 +906,15 @@ class AdbControllerApp(ctk.CTk):
         # Update button to be a STOP button
         self.find_click_type_button.configure(text="STOP AUTO-TYPE 🛑",
                                               fg_color=self.DANGER_COLOR,
-                                              hover_color="#CC4028")
+                                              hover_color="#CC4028",
+                                              text_color=self.ACCENT_COLOR)  # Updated button style
 
         self.status_label.configure(text="[CMD] Auto-type loop STARTED.", text_color=self.SUCCESS_COLOR)
 
         # Start the loop thread
-        threading.Thread(target=self._threaded_find_click_type_LOOP, args=(clean_lines,), daemon=True).start()
+        # --- SIMULA NG PAGBABAGO: Ipasa ang share_url sa thread ---
+        threading.Thread(target=self._threaded_find_click_type_LOOP, args=(clean_lines, share_url), daemon=True).start()
+        # --- WAKAS NG PAGBABAGO ---
 
     def stop_auto_type_loop(self):
         """Stops the auto-type loop and resets the button."""
@@ -881,8 +923,9 @@ class AdbControllerApp(ctk.CTk):
         # Check if button exists before configuring (in case window is closing)
         if hasattr(self, 'find_click_type_button') and self.find_click_type_button.winfo_exists():
             self.find_click_type_button.configure(text="START AUTO-TYPE ⌨️",
-                                                  fg_color="#3A3A3A",
-                                                  hover_color="#555555")
+                                                  fg_color=self.ACCENT_COLOR,
+                                                  hover_color=self.ACCENT_HOVER,
+                                                  text_color=self.BACKGROUND_COLOR)  # Updated button style
 
         # --- REMOVED STATUS LABEL UPDATE ---
         # if hasattr(self, 'status_label') and self.status_label.winfo_exists():
@@ -900,10 +943,13 @@ class AdbControllerApp(ctk.CTk):
         else:
             self.start_auto_type_loop()
 
-    def _threaded_find_click_type_LOOP(self, clean_lines):
+    # --- SIMULA NG PAGBABAGO: Tanggapin ang share_url ---
+    def _threaded_find_click_type_LOOP(self, clean_lines, share_url):
+        # --- WAKAS NG PAGBABAGO ---
         """
         The main 'while true' loop for auto-typing.
         It continues looping until at least one device successfully finds an EditText and types.
+        MODIFIED: If it fails, it runs the share_url command and loops again.
         """
         success_achieved = False
 
@@ -943,6 +989,44 @@ class AdbControllerApp(ctk.CTk):
                     self.after(0, lambda: self.status_label.configure(
                         text="✅ AUTO-TYPE SUCCESSFUL (Found & Typed). Stopping loop.", text_color=self.SUCCESS_COLOR))
                     break  # Exit the while loop
+                else:
+                    # --- SIMULA NG PAGBABAGO: Ito ang "Failure" case ---
+                    # Kung walang device na nag-success (walang nakitang EditText), i-run ang Share Post
+
+                    # Suriin kung tumatakbo pa rin bago magpadala ng bagong command
+                    if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
+                        break
+
+                    self.after(0, lambda: self.status_label.configure(
+                        text="[CMD] EditText not found. Sharing post...", text_color=self.WARNING_COLOR))
+
+                    # Buuin ang share command
+                    share_command = [
+                        'shell', 'am', 'start',
+                        '-a', 'android.intent.action.SEND',
+                        '-t', 'text/plain',
+                        '--es', 'android.intent.extra.TEXT', f'"{share_url}"',
+                        'com.facebook.lite'
+                    ]
+
+                    # Ipadala ang share command sa lahat ng device
+                    share_futures = []
+                    for serial in self.devices:
+                        if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
+                            break
+                        share_futures.append(self.executor.submit(run_adb_command, share_command, serial))
+
+                    # Hintayin matapos ang share bago mag-delay
+                    concurrent.futures.wait(share_futures)
+
+                    # Maghintay ng ilang segundo bago subukang muli
+                    # (Ito ay adjustable)
+                    wait_duration = 5  # 5 segundo
+                    for _ in range(wait_duration):
+                        if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
+                            break
+                        time.sleep(1)
+                    # --- WAKAS NG PAGBABAGO ---
 
 
         except Exception as e:
@@ -1027,10 +1111,11 @@ class AdbControllerApp(ctk.CTk):
                     return False, "Failed to tap"
 
                 # Mas matagal na delay para masigurong lalabas ang keyboard at handa na ang device.
-                time.sleep(3) # <-- BINAGO ang halaga para sa mas matibay na operasyon.
+                time.sleep(3)  # <-- BINAGO ang halaga para sa mas matibay na operasyon.
 
             if self.is_auto_typing.is_set() and not is_stop_requested.is_set():
                 # Step 8: Type
+                # This will now also click the "Post" button because run_text_command is modified
                 run_text_command(text_to_send, serial)
                 # print(f"[{serial}] Click and type successful.")
                 return True, "Success"
@@ -1266,7 +1351,7 @@ class AdbControllerApp(ctk.CTk):
         device_frame.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
         self.device_frames[serial] = device_frame
 
-        title = ctk.CTkLabel(device_frame, text=f"LIVE CONTROL: {serial}", font=ctk.CTkFont(size=18, weight="bold"),
+        title = ctk.CTkLabel(device_frame, text=f"LIVE CONTROL: {serial}", font=ctk.CTkFont(size=20, weight="bold"),
                              text_color=self.ACCENT_COLOR)
         title.pack(pady=(15, 10))
 
@@ -1287,8 +1372,8 @@ class AdbControllerApp(ctk.CTk):
         button_frame.pack(pady=(10, 15))
 
         # Adjusted button styling for professional look
-        button_style = {'corner_radius': 8, 'width': 80, 'fg_color': "#3A3A3A", 'hover_color': "#555555",
-                        'text_color': self.TEXT_COLOR}
+        button_style = {'corner_radius': 10, 'width': 100, 'fg_color': "#3A3A3A", 'hover_color': "#555555",
+                        'text_color': self.TEXT_COLOR, 'height': 45, 'font': ctk.CTkFont(size=14)}
 
         # Buttons control the Android device:
 
@@ -1309,8 +1394,8 @@ class AdbControllerApp(ctk.CTk):
 
         # CLOSE / POWER (KEYCODE 26) - Simulates pressing the power button to turn off the screen
         close_button = ctk.CTkButton(button_frame, text="SCREEN OFF 💡", command=lambda: self.send_adb_keyevent(26),
-                                     corner_radius=8, width=120, fg_color=self.DANGER_COLOR, hover_color="#CC4028",
-                                     text_color=self.ACCENT_COLOR)
+                                     corner_radius=10, width=120, fg_color=self.DANGER_COLOR, hover_color="#CC4028",
+                                     text_color=self.ACCENT_COLOR, height=45, font=ctk.CTkFont(size=14))
         close_button.pack(side=tk.LEFT, padx=5)
 
         # Swipes are common actions, keep them here
@@ -1613,5 +1698,3 @@ if __name__ == '__main__':
     multiprocessing.freeze_support()
     app = AdbControllerApp()
     app.mainloop()
-
-
