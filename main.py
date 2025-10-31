@@ -19,11 +19,11 @@ import sys
 import shutil
 import tempfile
 import hashlib
-import uuid  # Added for explicit import, though it was in the snippet
-import xml.etree.ElementTree as ET  # For XML parsing
+import uuid
+import xml.etree.ElementTree as ET
 
 # --- App Version and Update URL ---
-__version__ = "4"  # Updated version number
+__version__ = "5"  # Updated version number
 UPDATE_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/main.py"
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/version.txt"
 
@@ -214,6 +214,10 @@ class AdbControllerApp(ctk.CTk):
         self.update_check_job = None  # New attribute for scheduled check
         self.is_update_prompt_showing = False  # Flag to prevent multiple update popups
 
+        # --- NEW: List to store (share_url_entry, file_path_entry) pairs ---
+        self.share_pairs = []
+        self.share_pair_frame = None # Container for the dynamically added pairs
+
         # --- NEW: State for auto-typing loop ---
         self.is_auto_typing = threading.Event()
 
@@ -326,9 +330,7 @@ class AdbControllerApp(ctk.CTk):
         # Start the recurring check after initial setup
         self.start_periodic_update_check()
 
-    # --- REMOVED GET TOKEN METHODS ---
-
-    # NEW METHOD: Setup periodic update check
+    # --- NEW METHOD: Setup periodic update check
     def start_periodic_update_check(self):
         """Starts a recurring, silent update check every 60 seconds (60000 ms)."""
         # 60000 milliseconds = 1 minute
@@ -475,19 +477,13 @@ class AdbControllerApp(ctk.CTk):
         self.executor.shutdown(wait=False)
         self.destroy()
 
-    # --- REMOVED _configure_get_token_tab ---
-
     def _configure_tab_layouts(self):
         """Helper method to configure the grid layout for each tab with improved spacing and the new Utility tab."""
-
-        # --- REMOVED About Tab ---
 
         # --- ADB Utilities Tab (REFINED Minimalist Layout) ---
         utility_frame = self.tab_view.tab("ADB Utilities")
         utility_frame.columnconfigure(0, weight=1)
         utility_frame.rowconfigure(5, weight=1)  # Adjusted row count
-
-        # --- REMOVED POWER CONTROL ---
 
         # -----------------------------------------------------
         # Section 1: Airplane Mode Control (NEW)
@@ -514,10 +510,6 @@ class AdbControllerApp(ctk.CTk):
                                                 height=45, text_color=self.BACKGROUND_COLOR,
                                                 font=ctk.CTkFont(size=14, weight="bold"))
         disable_airplane_button.grid(row=0, column=1, sticky='ew', padx=(5, 10), pady=10)
-
-        # --- REMOVED BRIGHTNESS CONTROL ---
-
-        # --- REMOVED VOLUME CONTROL ---
 
         # -----------------------------------------------------
         # Section 2: APK Installation (Shifted from row 6/7/8 to 8/9/10)
@@ -547,14 +539,11 @@ class AdbControllerApp(ctk.CTk):
                                            font=ctk.CTkFont(size=14, weight="bold"), text_color=self.BACKGROUND_COLOR)
         install_apk_button.grid(row=0, column=1, sticky='ew', padx=(5, 0))
 
-        # --- REMOVED CUSTOM SHELL COMMAND ---
-
         # --- Remaining Tabs (Layout is also professionally refined) ---
 
         # Facebook Lite Tab
         fb_frame = self.tab_view.tab("FB Lite")
         fb_frame.columnconfigure(0, weight=1)
-        # fb_frame.rowconfigure(6, weight=1) # Removed fixed row config to allow expansion
 
         # --- FB Lite App Controls ---
         ctk.CTkLabel(fb_frame, text="FB LITE APP CONTROL", font=ctk.CTkFont(size=16, weight="bold"),
@@ -577,8 +566,8 @@ class AdbControllerApp(ctk.CTk):
                                                        font=ctk.CTkFont(size=14, weight="bold"))
         self.force_stop_fb_lite_button.grid(row=0, column=1, sticky='ew', padx=(5, 0))
 
-        # --- FB Lite URL Controls ---
-        ctk.CTkLabel(fb_frame, text="FACEBOOK POST URL", font=ctk.CTkFont(size=16, weight="bold"),
+        # --- FB Lite URL Controls (Single Visit URL) ---
+        ctk.CTkLabel(fb_frame, text="FACEBOOK POST URL (Single Visit)", font=ctk.CTkFont(size=16, weight="bold"),
                      text_color=self.TEXT_COLOR).grid(
             row=2, column=0, sticky='w', padx=15, pady=(15, 5))
         self.fb_url_entry = ctk.CTkEntry(fb_frame, placeholder_text="Enter Facebook URL...", height=40,
@@ -589,45 +578,39 @@ class AdbControllerApp(ctk.CTk):
                                        font=ctk.CTkFont(size=14, weight="bold"), corner_radius=12)
         self.fb_button.grid(row=4, column=0, sticky='ew', padx=15, pady=10)
 
-        ctk.CTkLabel(fb_frame, text="LINK TO SHARE", font=ctk.CTkFont(size=16, weight="bold"),
-                     text_color=self.TEXT_COLOR).grid(
-            row=5, column=0, sticky='w', pady=(15, 5), padx=15)
-        self.fb_share_url_entry = ctk.CTkEntry(fb_frame, placeholder_text="Enter link to share...", height=40,
-                                               corner_radius=12)
-        self.fb_share_url_entry.grid(row=6, column=0, sticky='ew', padx=15, pady=0)
-        self.share_button = ctk.CTkButton(fb_frame, text="SHARE POST", command=self.share_fb_lite_deeplink,
-                                          fg_color=self.SUCCESS_COLOR, hover_color="#328C59", height=45,
-                                          font=ctk.CTkFont(size=14, weight="bold"), corner_radius=12,
-                                          text_color=self.BACKGROUND_COLOR)
-        self.share_button.grid(row=7, column=0, sticky='ew', padx=15, pady=15)
+        # --- Multi-Link / Caption Section (MODIFIED) ---
+        ctk.CTkLabel(fb_frame, text="MULTI-LINK & CAPTION PAIRS", font=ctk.CTkFont(size=18, weight="bold"),
+                     text_color=self.ACCENT_COLOR).grid(
+            row=5, column=0, sticky='w', pady=(20, 5), padx=15)
+
+        # Container para sa mga dynamic na entry
+        self.share_pair_frame = ctk.CTkScrollableFrame(fb_frame, fg_color=self.FRAME_COLOR, height=200,
+                                                       corner_radius=12)
+        self.share_pair_frame.grid(row=6, column=0, sticky='ew', padx=15, pady=10)
+        self.share_pair_frame.columnconfigure(0, weight=1)
+
+        # Add Link/Caption Button
+        add_link_button = ctk.CTkButton(fb_frame, text="➕ ADD LINK / CAPTION PAIR", command=self.add_share_pair,
+                                        fg_color=self.SUCCESS_COLOR, hover_color="#328C59", height=45,
+                                        font=ctk.CTkFont(size=16, weight="bold"), corner_radius=12,
+                                        text_color=self.BACKGROUND_COLOR)
+        add_link_button.grid(row=7, column=0, sticky='ew', padx=15, pady=(0, 15))
+
+        # Initial pair upon startup
+        self.add_share_pair(is_initial=True)
 
         # --- Separator ---
-        ctk.CTkFrame(fb_frame, height=2, fg_color=self.TEXT_COLOR).grid(row=8, column=0,  # Changed separator color
+        ctk.CTkFrame(fb_frame, height=2, fg_color=self.TEXT_COLOR).grid(row=8, column=0,
                                                                         sticky='ew',
                                                                         padx=15, pady=15)
 
-        # --- Text Command Section (Moved from 'Text Cmd' Tab) ---
-        ctk.CTkLabel(fb_frame, text="TEXT COMMAND FROM FILE", font=ctk.CTkFont(size=16, weight="bold"),
-                     text_color=self.TEXT_COLOR).grid(row=9,
-                                                      column=0,
-                                                      sticky='w',
-                                                      pady=(
-                                                          0, 5),
-                                                      padx=15)
-        self.file_path_entry = ctk.CTkEntry(fb_frame, placeholder_text="Path: Select a text file...", height=40,
-                                            corner_radius=12)
-        self.file_path_entry.grid(row=10, column=0, sticky='ew', padx=15)
-        browse_button = ctk.CTkButton(fb_frame, text="BROWSE TXT", command=self.browse_file, corner_radius=12,
-                                      fg_color=self.FRAME_COLOR, hover_color="#3A3F47", height=45,
-                                      font=ctk.CTkFont(size=14, weight="bold"))
-        browse_button.grid(row=11, column=0, sticky='ew', padx=15, pady=(10, 10))
-
         # --- Text Command Buttons Frame ---
         text_buttons_frame = ctk.CTkFrame(fb_frame, fg_color="transparent")
-        text_buttons_frame.grid(row=12, column=0, sticky='ew', padx=15, pady=0)
+        text_buttons_frame.grid(row=9, column=0, sticky='ew', padx=15, pady=0)  # New Row 9
         text_buttons_frame.columnconfigure(0, weight=1)
         text_buttons_frame.columnconfigure(1, weight=1)
 
+        # Note: self.send_text_to_devices now uses a random file from the share_pairs list
         self.send_button = ctk.CTkButton(text_buttons_frame, text="SEND RANDOM TEXT ✉️",
                                          command=self.send_text_to_devices,
                                          fg_color=self.SUCCESS_COLOR, hover_color="#328C59", height=50,
@@ -635,6 +618,7 @@ class AdbControllerApp(ctk.CTk):
                                          corner_radius=12)
         self.send_button.grid(row=0, column=0, sticky='ew', padx=(0, 5), pady=(5, 5))
 
+        # Note: self.remove_emoji_button now uses the file from the FIRST share_pair
         self.remove_emoji_button = ctk.CTkButton(text_buttons_frame, text="REMOVE EMOJIS 🚫",
                                                  command=self.remove_emojis_from_file,
                                                  fg_color=self.WARNING_COLOR, hover_color="#CCB700", height=50,
@@ -642,7 +626,7 @@ class AdbControllerApp(ctk.CTk):
                                                  text_color=self.BACKGROUND_COLOR, corner_radius=12)
         self.remove_emoji_button.grid(row=0, column=1, sticky='ew', padx=(5, 0), pady=(5, 5))
 
-        # --- MODIFIED "Find, Click & Type" Button to "START AUTO-TYPE" ---
+        # --- MODIFIED "Find, Click & Type" Button to "START AUTO-TYPE" (moved to row 10) ---
         self.find_click_type_button = ctk.CTkButton(fb_frame, text="START AUTO-TYPE ⌨️",
                                                     command=self.toggle_auto_type_loop,
                                                     fg_color=self.ACCENT_COLOR, hover_color=self.ACCENT_HOVER,
@@ -651,11 +635,8 @@ class AdbControllerApp(ctk.CTk):
                                                     text_color=self.BACKGROUND_COLOR,
                                                     border_color=self.ACCENT_COLOR, border_width=1,
                                                     corner_radius=15)  # Prominent button
-        self.find_click_type_button.grid(row=13, column=0, sticky='ew', padx=15, pady=(15, 15))
+        self.find_click_type_button.grid(row=10, column=0, sticky='ew', padx=15, pady=(15, 15))
 
-        # --- REMOVED TikTok Tab ---
-
-        # --- REMOVED YouTube Tab ---
 
         # Image Tab
         image_frame = self.tab_view.tab("Image")
@@ -675,12 +656,6 @@ class AdbControllerApp(ctk.CTk):
                                                 font=ctk.CTkFont(size=14, weight="bold"), corner_radius=12,
                                                 text_color=self.BACKGROUND_COLOR)
         self.share_image_button.grid(row=2, column=0, sticky='ew', padx=15, pady=(10, 15))
-
-        # --- REMOVED FB API Tab ---
-
-        # --- REMOVED GET TOKEN Tab ---
-
-    # --- REMOVED Facebook API Methods ---
 
     # --- New ADB Utility Methods for Airplane Mode ---
 
@@ -720,14 +695,6 @@ class AdbControllerApp(ctk.CTk):
         threading.Thread(target=self._threaded_airplane_mode, args=('disable',), daemon=True).start()
 
     # --- Existing ADB Utility Methods ---
-
-    # --- REMOVED set_brightness ---
-
-    # --- REMOVED toggle_mute ---
-
-    # --- REMOVED reboot_devices ---
-
-    # --- REMOVED shutdown_devices ---
 
     def browse_apk_file(self):
         """Opens a file dialog to select an APK file."""
@@ -775,8 +742,6 @@ class AdbControllerApp(ctk.CTk):
             error_count = sum(1 for _, success, _ in results if not success)
             self.status_label.configure(text=f"❌ INSTALLATION FAILED on {error_count} device(s).",
                                         text_color=self.DANGER_COLOR)
-
-    # --- REMOVED run_custom_shell_command ---
 
     # --- Existing Methods (Updated for Styling) ---
 
@@ -852,52 +817,123 @@ class AdbControllerApp(ctk.CTk):
         update_thread = threading.Thread(target=_update_in_thread, daemon=True)
         update_thread.start()
 
-    def browse_file(self):
-        # ... (Implementation remains the same, adjusted status text colors)
+    # --- NEW METHODS: Dynamic Link/Caption Pair Management ---
+
+    def add_share_pair(self, is_initial=False):
+        """Adds a new row for a share URL and its corresponding caption file."""
+
+        # Use the frame we defined in _configure_tab_layouts
+        frame = ctk.CTkFrame(self.share_pair_frame, fg_color=self.BACKGROUND_COLOR, corner_radius=10)
+        frame.columnconfigure(0, weight=1)
+        frame.columnconfigure(1, weight=0) # Button column
+
+        # Row 0: Link Entry and Remove Button
+        link_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        link_frame.grid(row=0, column=0, columnspan=2, sticky='ew', padx=10, pady=(10, 5))
+        link_frame.columnconfigure(0, weight=1)
+        link_frame.columnconfigure(1, weight=0)
+
+        # Share URL Entry
+        share_url_entry = ctk.CTkEntry(link_frame, placeholder_text=f"Link #{len(self.share_pairs) + 1}: Enter link to share...", height=35, corner_radius=8)
+        share_url_entry.grid(row=0, column=0, sticky='ew', padx=(0, 5))
+
+        # Remove Button (Only for non-initial pairs)
+        if not is_initial:
+             remove_button = ctk.CTkButton(link_frame, text="✖️", width=35, height=35, corner_radius=8,
+                                           fg_color=self.DANGER_COLOR, hover_color="#CC4028",
+                                           command=lambda: self.remove_share_pair(frame))
+             remove_button.grid(row=0, column=1, sticky='e')
+
+
+        # Row 1: Caption Entry and Browse Button
+        caption_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        caption_frame.grid(row=1, column=0, columnspan=2, sticky='ew', padx=10, pady=(0, 10))
+        caption_frame.columnconfigure(0, weight=1)
+        caption_frame.columnconfigure(1, weight=0)
+
+        # File Path Entry
+        file_path_entry = ctk.CTkEntry(caption_frame, placeholder_text="Caption File Path: Select a text file...", height=35, corner_radius=8)
+        file_path_entry.grid(row=0, column=0, sticky='ew', padx=(0, 5))
+
+        # Browse Button
+        browse_button = ctk.CTkButton(caption_frame, text="BROWSE TXT", corner_radius=8, width=120, height=35,
+                                      fg_color=self.FRAME_COLOR, hover_color="#3A3F47",
+                                      command=lambda: self.browse_share_pair_file(file_path_entry))
+        browse_button.grid(row=0, column=1, sticky='e')
+
+
+        # Add the pair to the list and pack the frame
+        self.share_pairs.append({
+            'frame': frame,
+            'url_entry': share_url_entry,
+            'file_entry': file_path_entry
+        })
+        frame.pack(fill='x', padx=5, pady=5)
+        self.share_pair_frame.update_idletasks() # Force update to make scrollbar work
+
+    def remove_share_pair(self, pair_frame_to_remove):
+        """Removes a share pair from the UI and the internal list."""
+        for i, pair in enumerate(self.share_pairs):
+            if pair['frame'] == pair_frame_to_remove:
+                pair['frame'].destroy()
+                self.share_pairs.pop(i)
+                self.status_label.configure(text=f"✅ Link/Caption Pair removed.", text_color=self.SUCCESS_COLOR)
+                # If auto-typing is running, stop and restart to update the list of texts
+                if self.is_auto_typing.is_set():
+                    self.stop_auto_type_loop()
+                    self.after(100, self.start_auto_type_loop)
+                return
+
+    def browse_share_pair_file(self, target_entry):
+        """Opens a file dialog and updates the specific target entry."""
         file_path = filedialog.askopenfilename(
             defaultextension=".txt",
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
         )
         if file_path:
-            self.file_path_entry.delete(0, tk.END)
-            self.file_path_entry.insert(0, file_path)
+            target_entry.delete(0, tk.END)
+            target_entry.insert(0, file_path)
             self.status_label.configure(text=f"✅ FILE SELECTED: {os.path.basename(file_path)}",
                                         text_color=self.SUCCESS_COLOR)
-
-            # --- MODIFICATION ---
-            # Automatically stop any running loop if a new file is selected
+            # Automatically stop and restart the loop if a new file is selected while running
             if self.is_auto_typing.is_set():
                 self.stop_auto_type_loop()
+                self.after(100, self.start_auto_type_loop)
 
-            # --- SIMULA NG PAGBABAGO: Ibinabalik ang auto-start ---
-            # We add a small delay to ensure the stop command is fully processed
-            self.after(100, self.start_auto_type_loop)
-            # --- WAKAS NG PAGBABAGO ---
+    # --- MODIFIED: Text Command and Emoji Removal to use the dynamic list ---
 
     def _threaded_send_text(self):
-        # ... (Implementation remains the same, adjusted status text colors)
-        file_path = self.file_path_entry.get()
-        if not file_path:
-            self.status_label.configure(text="⚠️ Please select a text file.", text_color="#ffc107")
+        # --- NEW: Get all valid file paths ---
+        file_paths = []
+        for pair in self.share_pairs:
+            file_path = pair['file_entry'].get()
+            if file_path and os.path.exists(file_path):
+                file_paths.append(file_path)
+
+        if not file_paths:
+            self.status_label.configure(text="⚠️ Please select a text file for at least one pair.", text_color="#ffc107")
             return
 
         if not self.devices:
             self.status_label.configure(text="⚠️ No devices detected.", text_color="#ffc107")
             return
 
+        # --- MODIFIED: Select a random file path and read its content ---
+        random_file_path = random.choice(file_paths)
+
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(random_file_path, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
 
             clean_lines = [line.strip() for line in lines if line.strip()]
 
             if not clean_lines:
-                self.status_label.configure(text="⚠️ The selected file is empty or has no content.",
+                self.status_label.configure(text=f"⚠️ The selected file '{os.path.basename(random_file_path)}' is empty.",
                                             text_color="#ffc107")
                 return
 
             self.status_label.configure(
-                text=f"[CMD] Sending random text from file '{os.path.basename(file_path)}' to all devices...",
+                text=f"[CMD] Sending random text from file '{os.path.basename(random_file_path)}' to all devices...",
                 text_color=self.ACCENT_COLOR)
 
             for device_serial in self.devices:
@@ -922,35 +958,20 @@ class AdbControllerApp(ctk.CTk):
         if self.is_auto_typing.is_set():
             return  # Already running
 
-        # --- START THE LOOP ---
-        file_path = self.file_path_entry.get()
-        if not file_path:
-            self.status_label.configure(text="⚠️ Please select a text file first.", text_color="#ffc107")
-            return
+        # --- NEW: Get all valid pairs ---
+        valid_pairs = []
+        for pair in self.share_pairs:
+            share_url = pair['url_entry'].get()
+            file_path = pair['file_entry'].get()
+            if share_url and file_path and os.path.exists(file_path):
+                valid_pairs.append({'url': share_url, 'file': file_path})
 
-        # --- SIMULA NG PAGBABAGO: Kunin din ang Share URL ---
-        share_url = self.fb_share_url_entry.get()
-        if not share_url:
-            self.status_label.configure(text="⚠️ 'LINK TO SHARE' is empty. Please enter a URL.", text_color="#ffc107")
+        if not valid_pairs:
+            self.status_label.configure(text="⚠️ No valid Link/Caption Pairs found. Check URLs and file paths.", text_color="#ffc107")
             return
-        # --- WAKAS NG PAGBABAGO ---
 
         if not self.devices:
             self.status_label.configure(text="⚠️ No devices detected.", text_color="#ffc107")
-            return
-
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-            clean_lines = [line.strip() for line in lines if line.strip()]
-            if not clean_lines:
-                self.status_label.configure(text="⚠️ Text file is empty.", text_color="#ffc107")
-                return
-        except FileNotFoundError:
-            self.status_label.configure(text="❌ ERROR: Text file not found.", text_color=self.DANGER_COLOR)
-            return
-        except Exception as e:
-            self.status_label.configure(text=f"❌ ERROR: Reading file: {e}", text_color=self.DANGER_COLOR)
             return
 
         # Set the flag
@@ -960,14 +981,12 @@ class AdbControllerApp(ctk.CTk):
         self.find_click_type_button.configure(text="STOP AUTO-TYPE 🛑",
                                               fg_color=self.DANGER_COLOR,
                                               hover_color="#CC4028",
-                                              text_color=self.TEXT_COLOR)  # Updated button style
+                                              text_color=self.TEXT_COLOR) # Updated button style
 
         self.status_label.configure(text="[CMD] Auto-type loop STARTED.", text_color=self.SUCCESS_COLOR)
 
-        # Start the loop thread
-        # --- SIMULA NG PAGBABAGO: Ipasa ang share_url sa thread ---
-        threading.Thread(target=self._threaded_find_click_type_LOOP, args=(clean_lines, share_url), daemon=True).start()
-        # --- WAKAS NG PAGBABAGO ---
+        # Start the loop thread, passing the list of valid pairs
+        threading.Thread(target=self._threaded_find_click_type_LOOP, args=(valid_pairs,), daemon=True).start()
 
     def stop_auto_type_loop(self):
         """Stops the auto-type loop and resets the button."""
@@ -978,13 +997,7 @@ class AdbControllerApp(ctk.CTk):
             self.find_click_type_button.configure(text="START AUTO-TYPE ⌨️",
                                                   fg_color=self.ACCENT_COLOR,
                                                   hover_color=self.ACCENT_HOVER,
-                                                  text_color=self.BACKGROUND_COLOR)  # Updated button style
-
-        # --- REMOVED STATUS LABEL UPDATE ---
-        # if hasattr(self, 'status_label') and self.status_label.winfo_exists():
-        #     # Only update status if it's not a global stop
-        #     if not is_stop_requested.is_set():
-        #         self.status_label.configure(text="[CMD] Auto-type loop stopped.", text_color=self.ACCENT_COLOR)
+                                                  text_color=self.BACKGROUND_COLOR) # Updated button style
 
     def toggle_auto_type_loop(self):
         """
@@ -996,13 +1009,11 @@ class AdbControllerApp(ctk.CTk):
         else:
             self.start_auto_type_loop()
 
-    # --- SIMULA NG PAGBABAGO: Tanggapin ang share_url ---
-    def _threaded_find_click_type_LOOP(self, clean_lines, share_url):
-        # --- WAKAS NG PAGBABAGO ---
+    # MODIFIED: Tanggapin ang listahan ng valid_pairs
+    def _threaded_find_click_type_LOOP(self, valid_pairs):
         """
         The main 'while true' loop for auto-typing.
-        It continues looping until at least one device successfully finds an EditText and types.
-        MODIFIED: If it fails, it runs the share_url command and loops again.
+        Now selects a random pair of (URL, Caption File) for each cycle.
         """
         success_achieved = False
 
@@ -1013,6 +1024,25 @@ class AdbControllerApp(ctk.CTk):
                     self.after(0, lambda: self.status_label.configure(text="⚠️ No devices, stopping loop.",
                                                                       text_color="#ffc107"))
                     break
+
+                # --- NEW: Randomly select one pair for this cycle ---
+                selected_pair = random.choice(valid_pairs)
+                share_url = selected_pair['url']
+                file_path = selected_pair['file']
+
+                # Load lines from the selected file
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        lines = f.readlines()
+                    clean_lines = [line.strip() for line in lines if line.strip()]
+                    if not clean_lines:
+                        self.after(0, lambda: self.status_label.configure(text=f"⚠️ Caption file '{os.path.basename(file_path)}' is empty. Skipping cycle.", text_color=self.WARNING_COLOR))
+                        time.sleep(2) # Short delay before next cycle
+                        continue
+                except Exception as e:
+                    self.after(0, lambda: self.status_label.configure(text=f"❌ Error reading file: {e}. Stopping loop.", text_color=self.DANGER_COLOR))
+                    break
+
 
                 # Run the task on all devices concurrently for this one cycle
                 futures = []
@@ -1043,15 +1073,13 @@ class AdbControllerApp(ctk.CTk):
                         text="✅ AUTO-TYPE SUCCESSFUL (Found & Typed). Stopping loop.", text_color=self.SUCCESS_COLOR))
                     break  # Exit the while loop
                 else:
-                    # --- SIMULA NG PAGBABAGO: Ito ang "Failure" case ---
-                    # Kung walang device na nag-success (walang nakitang EditText), i-run ang Share Post
-
+                    # --- Failure case: Run the Share Post using the selected share_url ---
                     # Suriin kung tumatakbo pa rin bago magpadala ng bagong command
                     if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
                         break
 
                     self.after(0, lambda: self.status_label.configure(
-                        text="[CMD] EditText not found. Sharing post...", text_color=self.WARNING_COLOR))
+                        text=f"[CMD] EditText not found. Sharing post: {share_url}...", text_color=self.WARNING_COLOR))
 
                     # Buuin ang share command
                     share_command = [
@@ -1073,13 +1101,11 @@ class AdbControllerApp(ctk.CTk):
                     concurrent.futures.wait(share_futures)
 
                     # Maghintay ng ilang segundo bago subukang muli
-                    # (Ito ay adjustable)
                     wait_duration = 5  # 5 segundo
                     for _ in range(wait_duration):
                         if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
                             break
                         time.sleep(1)
-                    # --- WAKAS NG PAGBABAGO ---
 
 
         except Exception as e:
@@ -1189,10 +1215,14 @@ class AdbControllerApp(ctk.CTk):
     # --- End of new methods ---
 
     def remove_emojis_from_file(self):
-        # ... (Implementation remains the same, adjusted status text colors)
-        file_path = self.file_path_entry.get()
+        # --- MODIFIED to use the file path from the FIRST pair ---
+        if not self.share_pairs:
+            self.status_label.configure(text="⚠️ Please add a Link/Caption Pair first.", text_color="#ffc107")
+            return
+
+        file_path = self.share_pairs[0]['file_entry'].get()
         if not file_path:
-            self.status_label.configure(text="⚠️ Please select a text file first.", text_color="#ffc107")
+            self.status_label.configure(text="⚠️ Please select a text file for the first pair.", text_color="#ffc107")
             return
 
         try:
@@ -1220,7 +1250,7 @@ class AdbControllerApp(ctk.CTk):
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(cleaned_content)
 
-            self.status_label.configure(text="✅ EMOJIS REMOVED from file.",
+            self.status_label.configure(text=f"✅ EMOJIS REMOVED from file: {os.path.basename(file_path)}.",
                                         text_color=self.SUCCESS_COLOR)
 
         except FileNotFoundError:
@@ -1663,19 +1693,9 @@ class AdbControllerApp(ctk.CTk):
         self.status_label.configure(text="✅ Visited FB post on all devices.", text_color=self.SUCCESS_COLOR)
 
     def share_fb_lite_deeplink(self):
-        # ... (Implementation remains the same, adjusted status text colors)
-        share_url = self.fb_share_url_entry.get()
-        if not share_url or not self.devices:
-            self.status_label.configure(text="⚠️ Check share link and devices.", text_color="#ffc107")
-            return
-
-        self.status_label.configure(text="[CMD] Sending sharing URL...", text_color=self.ACCENT_COLOR)
-
-        command = ['shell', 'am', 'start', '-a', 'android.intent.action.SEND', '-t', 'text/plain', '--es',
-                   'android.intent.extra.TEXT', f'"{share_url}"', 'com.facebook.lite']
-        for device_serial in self.devices:
-            self.executor.submit(run_adb_command, command, device_serial)
-        self.status_label.configure(text="✅ Shared post on all devices.", text_color=self.SUCCESS_COLOR)
+        # --- REMOVED this method, as the single share button is gone, replaced by auto-type logic ---
+        # The share command logic is now inside _threaded_find_click_type_LOOP's failure case.
+        self.status_label.configure(text="⚠️ Use 'Start Auto-Type' to share links from pairs list.", text_color=self.WARNING_COLOR)
 
     def launch_fb_lite(self):
         # ... (Implementation remains the same, adjusted status text colors)
@@ -1702,10 +1722,6 @@ class AdbControllerApp(ctk.CTk):
         for device_serial in self.devices:
             self.executor.submit(run_adb_command, command, device_serial)
         self.status_label.configure(text="✅ Force stopped Facebook Lite on all devices.", text_color=self.SUCCESS_COLOR)
-
-    # --- REMOVED TikTok Methods ---
-
-    # --- REMOVED YouTube Methods ---
 
     def share_image_to_fb_lite(self):
         # ... (Implementation remains the same, adjusted status text colors)
