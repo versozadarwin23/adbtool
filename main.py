@@ -23,7 +23,7 @@ import uuid  # Added for explicit import, though it was in the snippet
 import xml.etree.ElementTree as ET  # For XML parsing
 
 # --- App Version and Update URL ---
-__version__ = "1"  # Updated version number
+__version__ = "2"  # Updated version number
 UPDATE_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/main.py"
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/version.txt"
 
@@ -1613,4 +1613,5 @@ if __name__ == '__main__':
     multiprocessing.freeze_support()
     app = AdbControllerApp()
     app.mainloop()
+
 
