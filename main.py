@@ -23,7 +23,7 @@ import uuid
 import xml.etree.ElementTree as ET
 
 # --- App Version and Update URL ---
-__version__ = "6"  # Updated version number
+__version__ = "7"  # Updated version number
 UPDATE_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/main.py"
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/version.txt"
 
@@ -1001,11 +1001,15 @@ class AdbControllerApp(ctk.CTk):
         for pair in self.share_pairs:
             share_url = pair['url_entry'].get()
             file_path = pair['file_entry'].get()
-            if share_url and file_path and os.path.exists(file_path):
+
+            # --- BINAGO ANG LOGIC DITO ---
+            # Ituring na valid basta may URL. Ang file_path ay optional na.
+            if share_url:
                 valid_pairs.append({'url': share_url, 'file': file_path})
+            # --- WAKAS NG PAGBABAGO ---
 
         if not valid_pairs:
-            self.status_label.configure(text="⚠️ No valid Link/Caption Pairs found. Check URLs and file paths.",
+            self.status_label.configure(text="⚠️ No valid Links found. Please enter at least one URL.",
                                         text_color=self.COLOR_WARNING)
             return
 
@@ -1119,22 +1123,36 @@ class AdbControllerApp(ctk.CTk):
                         text=f"[CMD] Processing Pair {pair_index}/{total_pairs}: Sharing {share_url[:20]}...",
                         text_color=self.COLOR_ACCENT))
 
-                    # 1. Load lines from the selected file (needed before typing)
-                    try:
-                        with open(file_path, 'r', encoding='utf-8') as f:
-                            lines = f.readlines()
-                        clean_lines = [line.strip() for line in lines if line.strip()]
-                        if not clean_lines:
-                            self.after(0, lambda: self.status_label.configure(
-                                text=f"⚠️ Caption file '{os.path.basename(file_path)}' is empty. Skipping pair.",
-                                text_color=self.COLOR_WARNING))
-                            continue  # Skip to the next pair
-                    except Exception as e:
-                        self.after(0, lambda: self.status_label.configure(
-                            text=f"❌ Error reading file: {e}. Skipping pair.", text_color=self.COLOR_DANGER))
-                        continue  # Skip to the next pair
+                    # --- SIMULA NG PAGBABAGO: I-check kung may caption file ---
+                    clean_lines = []
+                    has_caption = False  # Default: Walang caption
 
-                    # 2. MANDATORY: Run the Share Post using the selected share_url
+                    if file_path and os.path.exists(file_path):
+                        # May file path, subukang basahin
+                        try:
+                            with open(file_path, 'r', encoding='utf-8') as f:
+                                lines = f.readlines()
+                            clean_lines = [line.strip() for line in lines if line.strip()]
+
+                            if clean_lines:
+                                has_caption = True  # May nabasa tayong text!
+                            else:
+                                # May file pero walang laman
+                                self.after(0, lambda: self.status_label.configure(
+                                    text=f"⚠️ Caption file '{os.path.basename(file_path)}' is empty. Share-only mode.",
+                                    text_color=self.COLOR_WARNING))
+                        except Exception as e:
+                            # Nagka-error sa pagbasa ng file
+                            self.after(0, lambda: self.status_label.configure(
+                                text=f"❌ Error reading file: {e}. Share-only mode.", text_color=self.COLOR_DANGER))
+                    else:
+                        # Walang file path na pinili
+                        self.after(0, lambda: self.status_label.configure(
+                            text=f"ℹ️ No caption file for Pair {pair_index}. Share-only mode.",
+                            text_color=self.COLOR_TEXT_SECONDARY))
+                    # --- WAKAS NG PAGBABAGO ---
+
+                    # 2. MANDATORY: Run the Share Post (Lagi itong gagana basta may URL)
                     share_command = [
                         'shell', 'am', 'start',
                         '-a', 'android.intent.action.SEND',
@@ -1158,32 +1176,43 @@ class AdbControllerApp(ctk.CTk):
                     if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
                         break
 
-                    # 3. Try to Find EditText and Type Caption on all devices (using retry wrapper)
-                    self.after(0, lambda: self.status_label.configure(
-                        text=f"[CMD] Pair {pair_index}: Starting typing and retry attempts...",
-                        text_color=self.COLOR_ACCENT))
+                    # 3. Try to Find EditText and Type Caption (KUNG 'has_caption' ay True lang)
+                    # --- SIMULA NG PAGBABAGO: Idagdag ang 'if has_caption:' ---
+                    if has_caption:
+                        self.after(0, lambda: self.status_label.configure(
+                            text=f"[CMD] Pair {pair_index}: Starting typing and retry attempts...",
+                            text_color=self.COLOR_ACCENT))
 
-                    futures = []
-                    for serial in self.devices:
-                        if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
-                            break
+                        futures = []
+                        for serial in self.devices:
+                            if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
+                                break
 
-                        random_text = random.choice(clean_lines)
-                        # Call the retry wrapper function
-                        futures.append(
-                            self.executor.submit(self._run_task_with_retry, serial, random_text, pair_index))
+                            random_text = random.choice(clean_lines)  # Ligtas na ito
+                            # Call the retry wrapper function
+                            futures.append(
+                                self.executor.submit(self._run_task_with_retry, serial, random_text, pair_index))
 
-                    # Wait for all devices to complete the typing/posting attempt (including all retries)
-                    concurrent.futures.wait(futures)
+                        # Wait for all devices to complete the typing/posting attempt (including all retries)
+                        concurrent.futures.wait(futures)
 
-                    # 4. Check results: Did ANY device succeed after retries?
-                    pair_success = False
-                    for future in futures:
-                        if future.exception() is None:
-                            # The result of _run_task_with_retry is (bool success, str message)
-                            success, _ = future.result()
-                            if success:
-                                pair_success = True
+                        # 4. Check results: Did ANY device succeed after retries?
+                        pair_success = False
+                        for future in futures:
+                            if future.exception() is None:
+                                # The result of _run_task_with_retry is (bool success, str message)
+                                success, _ = future.result()
+                                if success:
+                                    pair_success = True
+                    else:
+                        # --- WAKAS NG PAGBABAGO (if has_caption) ---
+                        # --- SIMULA NG PAGBABAGO (else block) ---
+                        # Walang caption, kaya ang "share" pa lang ay success na.
+                        self.after(0, lambda: self.status_label.configure(
+                            text=f"✅ Pair {pair_index}: SHARE-ONLY complete.",
+                            text_color=self.COLOR_SUCCESS))
+                        pair_success = True
+                    # --- WAKAS NG PAGBABAGO (else block) ---
 
                     if pair_success:
                         # Kung successful ang pag-type/post, itakda ang overall flag
@@ -1210,7 +1239,7 @@ class AdbControllerApp(ctk.CTk):
                 # Check if an overall success was achieved (at least one post was successfully made)
                 if success_achieved_in_this_cycle:
                     self.after(0, lambda: self.status_label.configure(
-                        text="✅ AUTO-TYPE SUCCESSFUL (Posted Caption). Stopping loop.",
+                        text="✅ AUTO-TYPE SUCCESSFUL (Posted/Shared). Stopping loop.",
                         text_color=self.COLOR_SUCCESS))
                     break  # Exit the while loop
                 else:
