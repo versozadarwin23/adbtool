@@ -50,3 +50,4 @@ The left-side panel features a **Tab View** with various command categories.
 
 
 <img width="1920" height="1042" alt="image" src="https://github.com/user-attachments/assets/22d2a0d0-8da2-41cf-802d-960efcd8e1f7" />
+<img width="1920" height="1043" alt="image" src="https://github.com/user-attachments/assets/30a2d7a3-b5f9-44e9-a8ac-1faaba2bcaf8" />
