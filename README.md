@@ -47,3 +47,6 @@ The left-side panel features a **Tab View** with various command categories.
 * **Auto-Update**: The tool includes an update feature. Click the "Update" button to automatically download the latest version to your Desktop.
 * **ADB Path**: Ensure that **ADB (Android Debug Bridge)** is installed and added to your system's PATH for the application to function correctly.
         
+
+
+<img width="1920" height="1042" alt="image" src="https://github.com/user-attachments/assets/22d2a0d0-8da2-41cf-802d-960efcd8e1f7" />
