@@ -23,7 +23,7 @@ import uuid
 import xml.etree.ElementTree as ET
 
 # --- App Version and Update URL ---
-__version__ = "7"  # Updated version number
+__version__ = "8"  # Updated version number
 UPDATE_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/main.py"
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/version.txt"
 
@@ -532,11 +532,12 @@ class AdbControllerApp(ctk.CTk):
 
         fb_frame.columnconfigure(0, weight=1)
 
-        # --- Section: App Control ---
+        # --- Section: App Control (MODIFIED to include SWITCH ACC button) ---
         self._create_section_header(fb_frame, "App Control", 0)
         fb_app_frame = self._create_section_frame(fb_frame, 1)
         fb_app_frame.columnconfigure(0, weight=1)
         fb_app_frame.columnconfigure(1, weight=1)
+        fb_app_frame.columnconfigure(2, weight=1)  # New column for switch acc
 
         self.launch_fb_lite_button = ctk.CTkButton(fb_app_frame, text="Launch FB Lite",
                                                    command=self.launch_fb_lite,
@@ -551,7 +552,17 @@ class AdbControllerApp(ctk.CTk):
                                                        hover_color=self.COLOR_DANGER_HOVER, corner_radius=8,
                                                        text_color=self.COLOR_TEXT_PRIMARY, height=40,
                                                        font=self.FONT_BUTTON)
-        self.force_stop_fb_lite_button.grid(row=0, column=1, sticky='ew', padx=(5, 10), pady=10)
+        self.force_stop_fb_lite_button.grid(row=0, column=1, sticky='ew', padx=(5, 5), pady=10)
+
+        # NEW BUTTON: SWITCH ACC
+        self.switch_acc_button = ctk.CTkButton(fb_app_frame, text="SWITCH ACC 🔄",
+                                               command=lambda: threading.Thread(
+                                                   target=self._threaded_run_switch_account_sequence,
+                                                   daemon=True).start(),
+                                               corner_radius=8, fg_color=self.COLOR_ACCENT,
+                                               hover_color=self.COLOR_ACCENT_HOVER,
+                                               height=40, font=self.FONT_BUTTON, text_color=self.COLOR_BACKGROUND)
+        self.switch_acc_button.grid(row=0, column=2, sticky='ew', padx=(5, 10), pady=10)  # New column 2
 
         # --- Section: Single Post ---
         self._create_section_header(fb_frame, "Single Post Visit", 2)
@@ -689,6 +700,79 @@ class AdbControllerApp(ctk.CTk):
                                                 font=self.FONT_BUTTON, corner_radius=8,
                                                 text_color=self.COLOR_BACKGROUND)
         self.share_image_button.grid(row=1, column=0, sticky='ew', padx=10, pady=(5, 10))
+
+    # --- NEW METHOD: Switch Account Sequence ---
+
+    def _run_switch_account_adb_commands(self, serial):
+        """Runs the complete switch account ADB sequence on a single device."""
+        if is_stop_requested.is_set():
+            return False
+
+        try:
+            # 1. Tap at [621,48][695,122] (Center: 658, 85)
+            tap_x_1, tap_y_1 = 658, 85
+            # self.after(0, lambda: self.status_label.configure(text=f"[CMD] Tap 1 ({tap_x_1},{tap_y_1}) on {serial}", text_color=self.COLOR_ACCENT))
+            run_adb_command(['shell', 'input', 'tap', str(tap_x_1), str(tap_y_1)], serial)
+
+            # 2. Delay 2s and Swipe 359 1233 372 176 500
+            # self.after(0, lambda: self.status_label.configure(text=f"[SYS] Delay 2s (Swipe Pre) on {serial}", text_color=self.COLOR_TEXT_SECONDARY))
+            time.sleep(2)
+            swipe_cmd = ['shell', 'input', 'swipe', '359', '1233', '372', '176', '500']
+            # self.after(0, lambda: self.status_label.configure(text=f"[CMD] Swipe on {serial}", text_color=self.COLOR_ACCENT))
+            run_adb_command(swipe_cmd, serial)
+            # self.after(0, lambda: self.status_label.configure(text=f"[SYS] Delay 2s (Swipe Post) on {serial}", text_color=self.COLOR_TEXT_SECONDARY))
+            time.sleep(2)  # Delay after swipe
+
+            # 3. Delay 3s and Tap at [112,1208][231,1253] (Center: 172, 1231)
+            # self.after(0, lambda: self.status_label.configure(text=f"[SYS] Delay 3s (Tap 2 Pre) on {serial}", text_color=self.COLOR_TEXT_SECONDARY))
+            time.sleep(3)
+            tap_x_2, tap_y_2 = 172, 1231
+            # self.after(0, lambda: self.status_label.configure(text=f"[CMD] Tap 2 ({tap_x_2},{tap_y_2}) on {serial}", text_color=self.COLOR_ACCENT))
+            run_adb_command(['shell', 'input', 'tap', str(tap_x_2), str(tap_y_2)], serial)
+
+            # 4. Tap at [95,684][347,756] (Center: 221, 720)
+            tap_x_3, tap_y_3 = 221, 720
+            # self.after(0, lambda: self.status_label.configure(text=f"[CMD] Tap 3 ({tap_x_3},{tap_y_3}) on {serial}", text_color=self.COLOR_ACCENT))
+            run_adb_command(['shell', 'input', 'tap', str(tap_x_3), str(tap_y_3)], serial)
+
+            return True
+        except Exception as e:
+            # print(f"Error during switch sequence on {serial}: {e}")
+            return False
+
+    def _threaded_run_switch_account_sequence(self):
+        """Thread wrapper for the switch account sequence, handling multi-device execution and UI updates."""
+        if not self.devices:
+            self.after(0, lambda: self.status_label.configure(text="⚠️ No devices detected.",
+                                                              text_color=self.COLOR_WARNING))
+            return
+
+        self.after(0, lambda: self.status_label.configure(
+            text="[CMD] Starting SWITCH ACCOUNT sequence on all devices...",
+            text_color=self.COLOR_ACCENT))
+
+        futures = []
+        for serial in self.devices:
+            futures.append(self.executor.submit(self._run_switch_account_adb_commands, serial))
+
+        # Wait for all devices to finish the sequence
+        concurrent.futures.wait(futures)
+
+        # Check results and update final status
+        results = [f.result() for f in futures if f.exception() is None]
+        all_success = all(results)
+
+        if all_success and self.devices:
+            self.after(0, lambda: self.status_label.configure(
+                text=f"✅ SWITCH ACCOUNT sequence completed successfully on {len(self.devices)} devices.",
+                text_color=self.COLOR_SUCCESS))
+        else:
+            fail_count = len(self.devices) - sum(results)
+            self.after(0, lambda: self.status_label.configure(
+                text=f"❌ SWITCH ACCOUNT sequence FAILED on {fail_count} device(s). Check device screen/connection.",
+                text_color=self.COLOR_DANGER))
+
+    # --- End NEW METHOD: Switch Account Sequence ---
 
     # --- New ADB Utility Methods for Airplane Mode ---
 
@@ -1094,7 +1178,7 @@ class AdbControllerApp(ctk.CTk):
     def _threaded_find_click_type_LOOP(self, valid_pairs):
         """
         The main 'while true' loop for auto-typing.
-        MODIFIED: It now calls a retry wrapper for the typing sequence.
+        (REMOVED the final tap/swipe sequence as it's now in the SWITCH ACC button)
         """
 
         try:
@@ -1234,7 +1318,7 @@ class AdbControllerApp(ctk.CTk):
                         break
                     # --- WAKAS NG PAGDAGDAG NG COOLDOWN ---
 
-                # --- End of sequential processing for all pairs ---
+                # --- End of sequential processing for all pairs (REMOVED FINAL COMMANDS) ---
 
                 # Check if an overall success was achieved (at least one post was successfully made)
                 if success_achieved_in_this_cycle:
