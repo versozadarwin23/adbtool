@@ -23,7 +23,7 @@ import uuid
 import xml.etree.ElementTree as ET
 
 # --- App Version and Update URL ---
-__version__ = "8"  # Updated version number
+__version__ = "9"  # Updated version number
 UPDATE_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/main.py"
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/version.txt"
 
@@ -491,7 +491,7 @@ class AdbControllerApp(ctk.CTk):
             title = "New ADB Commander Update!"
             message = (
                 f"An improved version ({latest_version}) is now available!\n\n"
-                "New Auto Click what's on your mind Auto Type caption This update contains the latest upgrades and performance improvements for faster and more reliable control of your devices.\n\n"
+                "New Auto Click what's on your mind Auto Type caption auto switch acc This update contains the latest upgrades and performance improvements for faster and more reliable control of your devices.\n\n"
                 "The app will close and restart to complete the update. Would you like to update now?"
             )
 
