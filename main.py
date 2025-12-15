@@ -23,12 +23,16 @@ import uuid
 import xml.etree.ElementTree as ET
 
 # --- App Version and Update URL ---
-__version__ = "9"  # Updated version number
+__version__ = "10"  # Updated version number
 UPDATE_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/main.py"
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/version.txt"
 
 # --- Global Flag for Stopping Commands ---
 is_stop_requested = threading.Event()
+
+# --- NEW: Global Variable for Account Directory ---
+ACCOUNT_DIR = None
+CONFIG_FILE = "config.json"  # New: Configuration file name
 
 
 def run_adb_command(command, serial):
@@ -85,64 +89,38 @@ def run_adb_command(command, serial):
 
 def run_text_command(text_to_send, serial):
     """
-    Sends a specific text string character-by-character with delay and proper space escaping.
-    MODIFIED: Removed initial string pre-escaping; now escapes only spaces inside the loop.
+    [MODIFIED FOR SPEED] Sends the entire text string in one go using ADB 'input text'.
+    Spaces are escaped with '%s' for fast, reliable input.
     """
     if is_stop_requested.is_set():
-        # print(f"🛑 Stop signal received. Aborting text command on device {serial}.")
         return
 
     if not text_to_send:
-        # print(f"Text is empty. Cannot send command to {serial}.")
         return
 
-    # --- SIMULA NG FIX: Gamitin ang orihinal na text para sa iteration ---
-    formatted_text = text_to_send  # Ito ang orihinal na text (e.g., "salamat doc")
-    DELAY_PER_CHAR = 0.02
+    # 1. Escape the entire text: replace space with %s for fast typing
+    adb_text = text_to_send.replace(' ', '%s')
 
     try:
-        # Ulitin ang bawat letra sa formatted_text
-        for char in formatted_text:
-            if is_stop_requested.is_set():
-                # print(f"🛑 Stop signal received. Aborting text command on device {serial}.")
-                return
+        # 2. Send the entire text string in ONE command for maximum speed
+        command_args = ['shell', 'input', 'text', adb_text]
 
-            # I-escape ang space character lang sa loob ng loop (space -> %s)
-            adb_char = char.replace(' ', '%s')
+        subprocess.run(['adb', '-s', serial] + command_args,
+                       stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL,
+                       check=True,
+                       timeout=5)
 
-            # 1. Mag-type ng isang letra gamit ang bagong istraktura
-            command_args = ['shell', 'input', 'text', adb_char]
-
-            # Synchronous execution with reduced timeout (5 seconds)
-            subprocess.run(['adb', '-s', serial] + command_args,
-                           stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL,
-                           check=True,
-                           timeout=5)
-
-            # 2. Maghintay (Delay) bago i-type ang susunod na letra
-            time.sleep(DELAY_PER_CHAR)
-
-        # --- WAKAS NG FIX ---
-
-        # --- MGA SUMUSUNOD NA COMMAND (CLICK) ---
-
-        # Hihintay ng isang segundo para masigurong tapos na ang pag-type (optional, but safer)
+        # 3. Wait briefly for the text field to register the input (1.0 second delay)
         time.sleep(1.0)
 
         if is_stop_requested.is_set():
-            # print(f"🛑 Stop signal received. Aborting tap command on device {serial}.")
             return
 
-        # Mga coordinate mula sa iyong request: [592,61][685,106]
-        x1, y1 = 592, 61
-        x2, y2 = 685, 106
+        # 4. Tap command for Post button (Coordinates: 638, 83)
+        tap_x = 638
+        tap_y = 83
 
-        # Kalkulahin ang gitna
-        tap_x = (x1 + x2) // 2  # Resulta: 638
-        tap_y = (y1 + y2) // 2  # Resulta: 83
-
-        # Ipadala ang tap command
         tap_cmd = ['shell', 'input', 'tap', str(tap_x), str(tap_y)]
         subprocess.run(['adb', '-s', serial] + tap_cmd,
                        stdout=subprocess.DEVNULL,
@@ -170,6 +148,30 @@ def create_and_run_updater_script(new_file_path, old_file_path):
         os._exit(0)
     except Exception as e:
         messagebox.showerror("Update Error", f"Failed to replace file: {e}")
+
+
+# --- MODIFIED FUNCTION: Read Accounts from File (Removed :4 limit) ---
+def read_accounts_for_device(serial):
+    """
+    Reads and returns a list of account names from a file named f'{serial}.txt'
+    inside the global ACCOUNT_DIR.
+    Returns: list of str (account names)
+    """
+    if not ACCOUNT_DIR:
+        return []
+
+    file_path = Path(ACCOUNT_DIR) / f"{serial}.txt"
+
+    if not file_path.is_file():
+        return []
+
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            lines = [line.strip() for line in f.readlines()]
+            # Filter out empty lines and return ALL accounts
+            return [line for line in lines if line]
+    except Exception:
+        return []
 
 
 # --- AdbControllerApp Class ---
@@ -229,6 +231,12 @@ class AdbControllerApp(ctk.CTk):
         self.share_pairs = []
         self.share_pair_frame = None
         self.is_auto_typing = threading.Event()
+        # --- NEW STATE VARIABLE for logging ---
+        self.is_logging_enabled = tk.BooleanVar(value=True)  # <-- INILIPAT DITO
+        # --- NEW STATE VARIABLE for looping ---
+        self.account_dir_path = ""  # Track the selected account directory
+        self.device_account_cycle = {}  # Tracks accounts for loop cycling
+        # --- END NEW STATE VARIABLE ---
 
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=multiprocessing.cpu_count() * 4)
 
@@ -333,6 +341,9 @@ class AdbControllerApp(ctk.CTk):
         self.tab_view.set("Facebook Automation")  # Start on the main tab
         # --- END MODIFIED TABS ---
 
+        # Load config before configuring tab layouts to pre-populate entry
+        self._load_config()
+
         self._configure_tab_layouts()
 
         # --- Row 5: Status Bar (Docked Bottom) ---
@@ -351,6 +362,66 @@ class AdbControllerApp(ctk.CTk):
         self.detect_devices()
         self.check_for_updates()
         self.start_periodic_update_check()
+
+    # --- NEW HELPER METHOD: Logging/Status Wrapper ---
+    def _update_status_if_enabled(self, text, color):
+        """Updates the status label only if logging is enabled."""
+        if self.is_logging_enabled.get():
+            self.after(0, lambda: self.status_label.configure(text=text, text_color=color))
+
+    # --- END HELPER METHOD ---
+
+    # --- NEW CONFIGURATION METHODS ---
+    def _load_config(self):
+        """Loads the account directory path from the configuration file if it exists."""
+        global ACCOUNT_DIR
+        try:
+            # Use the directory of the script/executable for config file location
+            if getattr(sys, 'frozen', False):
+                # Running as a PyInstaller executable
+                base_path = Path(sys.executable).parent
+            else:
+                # Running as a script
+                base_path = Path(sys.argv[0]).parent
+
+            config_path = base_path / CONFIG_FILE
+
+            if config_path.is_file():
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    loaded_path = config.get("account_dir")
+                    if loaded_path and Path(loaded_path).is_dir():
+                        self.account_dir_path = loaded_path
+                        ACCOUNT_DIR = loaded_path
+                        self._update_status_if_enabled(
+                            text=f"✅ Loaded account folder: {os.path.basename(loaded_path)}",
+                            color=self.COLOR_TEXT_SECONDARY)
+                        return
+        except Exception:
+            pass
+        self.account_dir_path = ""
+        ACCOUNT_DIR = None
+
+    def _save_config(self, path):
+        """Saves the current account directory path to the configuration file."""
+        try:
+            # Determine the correct path for the config file
+            if getattr(sys, 'frozen', False):
+                base_path = Path(sys.executable).parent
+            else:
+                base_path = Path(sys.argv[0]).parent
+
+            config_path = base_path / CONFIG_FILE
+
+            config = {"account_dir": path}
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(config, f, indent=4)
+        except Exception:
+            self._update_status_if_enabled(
+                text="❌ Failed to save configuration file.",
+                color=self.COLOR_DANGER)
+
+    # --- End NEW CONFIGURATION METHODS ---
 
     # --- Section Helper for Professional Look ---
     def _create_section_header(self, parent, text, row):
@@ -399,7 +470,6 @@ class AdbControllerApp(ctk.CTk):
             except ValueError:
                 # Fallback to string comparison if version contains non-numeric chars (e.g., '1-beta')
                 if latest_version > __version__:
-                    # Only show prompt if a new version is available
                     self.after(0, self.ask_for_update, latest_version)
             # --- WAKAS NG FIX ---
 
@@ -442,38 +512,38 @@ class AdbControllerApp(ctk.CTk):
 
             except requests.exceptions.HTTPError as http_err:
                 status_code = http_err.response.status_code
-                self.after(0, lambda: self.status_label.configure(
+                self._update_status_if_enabled(
                     text=f"❌ ERROR: Failed to check for update. HTTP Status: {status_code}",
-                    text_color=self.COLOR_DANGER))
+                    color=self.COLOR_DANGER)
                 self.after(0, lambda: messagebox.showwarning(
                     "Update Check Failed",
                     f"Unable to reach the update server (HTTP Error {status_code}). Check your network or firewall settings."))
             except requests.exceptions.ConnectionError:
-                self.after(0, lambda: self.status_label.configure(
+                self._update_status_if_enabled(
                     text="❌ ERROR: Failed to check for update. Connection Refused.",
-                    text_color=self.COLOR_DANGER))
+                    color=self.COLOR_DANGER)
                 self.after(0, lambda: messagebox.showwarning(
                     "Update Check Failed",
                     "Cannot connect to the update server. Check your internet connection, firewall, or proxy."))
             except requests.exceptions.Timeout:
-                self.after(0, lambda: self.status_label.configure(
+                self._update_status_if_enabled(
                     text="❌ ERROR: Failed to check for update. Connection Timed Out.",
-                    text_color=self.COLOR_DANGER))
+                    color=self.COLOR_DANGER)
                 self.after(0, lambda: messagebox.showwarning(
                     "Update Check Failed",
                     "The connection timed out while checking for updates. Your network might be slow or unstable."))
             except requests.exceptions.RequestException as e:
-                self.after(0, lambda: self.status_label.configure(
+                self._update_status_if_enabled(
                     text=f"❌ ERROR: Failed to check for update. Details: {e.__class__.__name__}",
-                    text_color=self.COLOR_DANGER))
+                    color=self.COLOR_DANGER)
                 self.after(0, lambda: messagebox.showwarning(
                     "Update Check Failed",
                     f"An error occurred during update check: {e.__class__.__name__}. Check logs for details."))
             except Exception:
                 # Catch all other unexpected errors
-                self.after(0, lambda: self.status_label.configure(
+                self._update_status_if_enabled(
                     text="❌ ERROR: An unexpected error occurred during version check.",
-                    text_color=self.COLOR_DANGER))
+                    color=self.COLOR_DANGER)
                 self.after(0, lambda: messagebox.showwarning(
                     "Update Check Failed",
                     "An unexpected error occurred during the version check."))
@@ -532,12 +602,45 @@ class AdbControllerApp(ctk.CTk):
 
         fb_frame.columnconfigure(0, weight=1)
 
+        # --- NEW Section: Account Management ---
+        self._create_section_header(fb_frame, "Account Management", 0)
+        acc_mgmt_frame = self._create_section_frame(fb_frame, 1)
+
+        # Pre-populate entry with loaded path
+        initial_acc_dir_text = os.path.basename(
+            self.account_dir_path) if self.account_dir_path else "Path: Select account folder..."
+
+        self.acc_dir_entry = ctk.CTkEntry(acc_mgmt_frame, placeholder_text="Path: Select account folder...", height=40,
+                                          corner_radius=8, font=self.FONT_BODY)
+        self.acc_dir_entry.grid(row=0, column=0, sticky='ew', padx=10, pady=(10, 5))
+        self.acc_dir_entry.delete(0, tk.END)
+        self.acc_dir_entry.insert(0, initial_acc_dir_text)
+
+        acc_button_frame = ctk.CTkFrame(acc_mgmt_frame, fg_color="transparent")
+        acc_button_frame.grid(row=1, column=0, sticky='ew', padx=10, pady=(5, 10))
+        acc_button_frame.columnconfigure(0, weight=1)
+        acc_button_frame.columnconfigure(1, weight=1)
+
+        browse_acc_button = ctk.CTkButton(acc_button_frame, text="BROWSE DIR", command=self.browse_account_directory,
+                                          fg_color=self.COLOR_BORDER, hover_color=self.COLOR_TEXT_SECONDARY,
+                                          corner_radius=8, height=40,
+                                          font=self.FONT_BUTTON)
+        browse_acc_button.grid(row=0, column=0, sticky='ew', padx=(0, 5))
+
+        # Updated text to reflect unlimited accounts
+        acc_status_text = f"Folder: {os.path.basename(self.account_dir_path)}" if self.account_dir_path else "No folder selected."
+        self.acc_status_label = ctk.CTkLabel(acc_button_frame, text=acc_status_text, anchor='e',
+                                             font=self.FONT_BODY, text_color=self.COLOR_TEXT_SECONDARY)
+        self.acc_status_label.grid(row=0, column=1, sticky='ew', padx=(5, 0))
+        # --- End NEW Section: Account Management ---
+
         # --- Section: App Control (MODIFIED to include SWITCH ACC button) ---
-        self._create_section_header(fb_frame, "App Control", 0)
-        fb_app_frame = self._create_section_frame(fb_frame, 1)
+        self._create_section_header(fb_frame, "App Control", 2)
+        fb_app_frame = self._create_section_frame(fb_frame, 3)
         fb_app_frame.columnconfigure(0, weight=1)
         fb_app_frame.columnconfigure(1, weight=1)
-        fb_app_frame.columnconfigure(2, weight=1)  # New column for switch acc
+        fb_app_frame.columnconfigure(2, weight=1)
+        fb_app_frame.columnconfigure(3, weight=0) # <--- NEW COLUMN FOR TIPS BUTTON
 
         self.launch_fb_lite_button = ctk.CTkButton(fb_app_frame, text="Launch FB Lite",
                                                    command=self.launch_fb_lite,
@@ -562,11 +665,20 @@ class AdbControllerApp(ctk.CTk):
                                                corner_radius=8, fg_color=self.COLOR_ACCENT,
                                                hover_color=self.COLOR_ACCENT_HOVER,
                                                height=40, font=self.FONT_BUTTON, text_color=self.COLOR_BACKGROUND)
-        self.switch_acc_button.grid(row=0, column=2, sticky='ew', padx=(5, 10), pady=10)  # New column 2
+        self.switch_acc_button.grid(row=0, column=2, sticky='ew', padx=(5, 5), pady=10)  # New column 2
+
+        # NEW BUTTON: TIPS
+        self.switch_acc_tip_button = ctk.CTkButton(fb_app_frame, text="❓",
+                                                   command=self.show_switch_account_tips,
+                                                   corner_radius=8, fg_color=self.COLOR_FRAME,
+                                                   hover_color=self.COLOR_BORDER,
+                                                   height=40, width=40, font=self.FONT_BUTTON,
+                                                   text_color=self.COLOR_TEXT_PRIMARY)
+        self.switch_acc_tip_button.grid(row=0, column=3, sticky='e', padx=(5, 10), pady=10) # <--- NEW BUTTON PLACEMENT
 
         # --- Section: Single Post ---
-        self._create_section_header(fb_frame, "Single Post Visit", 2)
-        fb_single_frame = self._create_section_frame(fb_frame, 3)
+        self._create_section_header(fb_frame, "Single Post Visit", 4)
+        fb_single_frame = self._create_section_frame(fb_frame, 5)
 
         self.fb_url_entry = ctk.CTkEntry(fb_single_frame, placeholder_text="Enter Facebook URL...", height=40,
                                          corner_radius=8, font=self.FONT_BODY)
@@ -578,12 +690,12 @@ class AdbControllerApp(ctk.CTk):
         self.fb_button.grid(row=1, column=0, sticky='ew', padx=10, pady=(5, 10))
 
         # --- Section: Multi-Post Automation ---
-        self._create_section_header(fb_frame, "Multi-Link & Caption Automation", 4)
+        self._create_section_header(fb_frame, "Multi-Link & Caption Automation", 6)
 
         # Container para sa mga dynamic na entry
         self.share_pair_frame = ctk.CTkScrollableFrame(fb_frame, fg_color=self.COLOR_FRAME, height=200,
                                                        corner_radius=8, border_color=self.COLOR_BORDER, border_width=1)
-        self.share_pair_frame.grid(row=5, column=0, sticky='ew', padx=15, pady=5)
+        self.share_pair_frame.grid(row=7, column=0, sticky='ew', padx=15, pady=5)
         self.share_pair_frame.columnconfigure(0, weight=1)
 
         # Add Link/Caption Button
@@ -591,14 +703,14 @@ class AdbControllerApp(ctk.CTk):
                                         fg_color=self.COLOR_SUCCESS, hover_color=self.COLOR_SUCCESS_HOVER, height=40,
                                         font=self.FONT_BUTTON, corner_radius=8,
                                         text_color=self.COLOR_BACKGROUND)
-        add_link_button.grid(row=6, column=0, sticky='ew', padx=15, pady=(5, 10))
+        add_link_button.grid(row=8, column=0, sticky='ew', padx=15, pady=(5, 10))
 
         # Initial pair upon startup
         self.add_share_pair(is_initial=True)
 
         # --- Section: Automation Actions ---
-        self._create_section_header(fb_frame, "Automation Actions", 7)
-        action_frame = self._create_section_frame(fb_frame, 8)
+        self._create_section_header(fb_frame, "Automation Actions", 9)
+        action_frame = self._create_section_frame(fb_frame, 10)
         action_frame.columnconfigure(0, weight=1)
         action_frame.columnconfigure(1, weight=1)
 
@@ -624,7 +736,7 @@ class AdbControllerApp(ctk.CTk):
                                                     font=self.FONT_SUBHEADING,
                                                     text_color=self.COLOR_BACKGROUND,
                                                     corner_radius=8)
-        self.find_click_type_button.grid(row=9, column=0, sticky='ew', padx=15, pady=(15, 15))
+        self.find_click_type_button.grid(row=11, column=0, sticky='ew', padx=15, pady=(15, 15))
 
         # --- Configure "Utilities" Tab (NEW MERGED TAB) ---
         utility_tab_container = self.tab_view.tab("Utilities")
@@ -701,93 +813,640 @@ class AdbControllerApp(ctk.CTk):
                                                 text_color=self.COLOR_BACKGROUND)
         self.share_image_button.grid(row=1, column=0, sticky='ew', padx=10, pady=(5, 10))
 
-    # --- NEW METHOD: Switch Account Sequence ---
+        # --- NEW Section: Logging Control ---
+        self._create_section_header(utility_frame, "Logging Control", 6)
+        log_frame = self._create_section_frame(utility_frame, 7)
+        log_frame.columnconfigure(0, weight=1)
 
-    def _run_switch_account_adb_commands(self, serial):
-        """Runs the complete switch account ADB sequence on a single device."""
+        ctk.CTkCheckBox(log_frame,
+                        text="Enable Status Messages / Logging",
+                        variable=self.is_logging_enabled,
+                        onvalue=True, offvalue=False,
+                        height=40,
+                        font=self.FONT_BUTTON,
+                        text_color=self.COLOR_TEXT_PRIMARY).grid(row=0, column=0, sticky='ew', padx=10, pady=10)
+        # --- End NEW Section: Logging Control ---
+
+    # --- NEW METHOD: Switch Account Tips Pop-up ---
+    def show_switch_account_tips(self):
+        """Displays a professional tip box for the Switch Account feature."""
+        tip_title = "ADB Commander: Switch Account Tips"
+
+        # This is the English message for the user
+        tip_message = (
+            "The 'SWITCH ACC 🔄' feature automates the process of changing the logged-in Facebook account on all connected devices.\n\n"
+            "**⚠️ Requirements for Success:**\n"
+            "1. **Account Directory:** You MUST first select an 'Account Directory' using the 'BROWSE DIR' button in the 'Account Management' section.\n"
+            "2. **Account Files:** This directory must contain a text file named after each device's serial number (e.g., `device_serial_1.txt`).\n"
+            "3. **Account Names in Files:** Each text file must contain a list of the *FULL ACCOUNT NAMES* (as they appear on the FB Lite switch screen), one per line.\n"
+            "4. **FB Lite State:** All devices must be logged into Facebook Lite and be on the 'Select Account' screen (or at least have multiple accounts stored). The app will attempt to log out the current account to reach this screen.\n\n"
+            "**How it Works:**\n"
+            "The app reads the accounts from the device's file, randomly selects a name, and attempts to find and tap that name on the screen. The auto-type loop cycles through these names one by one."
+        )
+
+        messagebox.showinfo(tip_title, tip_message)
+    # --- END NEW METHOD ---
+
+    # --- MODIFIED METHOD: Browse Account Directory ---
+    def browse_account_directory(self):
+        """Opens a file dialog to select the folder containing UDID.txt files."""
+        folder_path = filedialog.askdirectory()
+        if folder_path:
+            global ACCOUNT_DIR
+            ACCOUNT_DIR = folder_path
+            self.account_dir_path = folder_path
+
+            # Save the new path
+            self._save_config(folder_path)
+
+            # Update UI
+            self.acc_dir_entry.delete(0, tk.END)
+            self.acc_dir_entry.insert(0, os.path.basename(folder_path))
+            self._update_status_if_enabled(text=f"✅ ACCOUNT FOLDER SELECTED: {os.path.basename(folder_path)}",
+                                           color=self.COLOR_SUCCESS)
+            self.acc_status_label.configure(text=f"Folder: {os.path.basename(folder_path)}",
+                                            text_color=self.COLOR_TEXT_SECONDARY)
+        else:
+            self.acc_status_label.configure(text=f"No folder selected.", text_color=self.COLOR_TEXT_SECONDARY)
+
+    # --- NEW HELPER FUNCTION for Switching Account to a Specific Name ---
+    def _run_dynamic_tap_by_content_desc(self, serial, content_desc, tap_timeout=5):
+        """
+        Dumps UI and finds coordinates of a View by its content-desc attribute, then taps it.
+        Returns: (bool success, str output_or_error)
+        """
         if is_stop_requested.is_set():
-            return False
+            return False, "Stop requested."
+
+        local_xml_file = f"ui_dump_{serial}_{uuid.uuid4()}.xml"
+        try:
+            # 1. Dump UI
+            dump_cmd = ['shell', 'uiautomator', 'dump', '/data/local/tmp/ui.xml']
+            success, out = run_adb_command(dump_cmd, serial)
+            if not success:
+                return False, "Failed to dump UI"
+
+            # 2. Pull XML
+            pull_cmd = ['pull', '/data/local/tmp/ui.xml', local_xml_file]
+            success, out = run_adb_command(pull_cmd, serial)
+            if not success:
+                return False, "Failed to pull UI XML"
+
+            # 3. Parse XML and Find Node
+            if not os.path.exists(local_xml_file):
+                return False, "XML file not found"
+
+            tree = ET.parse(local_xml_file)
+            root = tree.getroot()
+
+            # Find the node using XPath that matches the content-desc
+            xpath_query = f".//node[@content-desc='{content_desc}']"
+            # Fallback check for 'text' attribute as it might contain the name
+            xpath_query_fallback = f".//node[@text='{content_desc}']"
+
+            node = root.find(xpath_query)
+            if node is None:
+                # Try fallback
+                node = root.find(xpath_query_fallback)
+
+            if node is None:
+                return False, f"Node with text/desc '{content_desc}' not found in UI dump."
+
+            # 4. Get Bounds
+            bounds_str = node.get('bounds')  # e.g., "[100,200][300,400]"
+            if not bounds_str:
+                return False, "Found node but bounds are missing."
+
+            coords = re.findall(r'\d+', bounds_str)
+            if len(coords) < 4:
+                return False, "Invalid bounds string."
+
+            x1, y1, x2, y2 = map(int, coords[:4])
+
+            # 5. Calculate Center
+            tap_x = (x1 + x2) // 2
+            tap_y = (y1 + y2) // 2
+
+            # 6. Click
+            tap_cmd = ['shell', 'input', 'tap', str(tap_x), str(tap_y)]
+            # Use the faster synchronous subprocess.run for this quick tap
+            subprocess.run(['adb', '-s', serial] + tap_cmd,
+                           stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL,
+                           check=True,
+                           timeout=tap_timeout)
+            return True, f"Tapped {content_desc} at ({tap_x},{tap_y})"
+
+        except ET.ParseError:
+            return False, "Failed to parse XML."
+        except subprocess.CalledProcessError:
+            return False, "ADB command failed during tap."
+        except subprocess.TimeoutExpired:
+            return False, "Tap command timed out."
+        except Exception as e:
+            return False, f"Error in dynamic tap: {e}"
+        finally:
+            # Cleanup
+            if os.path.exists(local_xml_file):
+                os.remove(local_xml_file)
+
+    def _run_switch_account_by_name(self, serial, target_account_name):
+        """[CORE SWITCH LOGIC] Runs the full switch sequence to a SPECIFIC account name."""
+        if is_stop_requested.is_set():
+            return False, "Stop requested"
 
         try:
-            # 1. Tap at [621,48][695,122] (Center: 658, 85)
-            tap_x_1, tap_y_1 = 658, 85
-            # self.after(0, lambda: self.status_label.configure(text=f"[CMD] Tap 1 ({tap_x_1},{tap_y_1}) on {serial}", text_color=self.COLOR_ACCENT))
-            run_adb_command(['shell', 'input', 'tap', str(tap_x_1), str(tap_y_1)], serial)
+            # --- PHASE 1: Open Switch Account Screen ---
 
-            # 2. Delay 2s and Swipe 359 1233 372 176 500
-            # self.after(0, lambda: self.status_label.configure(text=f"[SYS] Delay 2s (Swipe Pre) on {serial}", text_color=self.COLOR_TEXT_SECONDARY))
+            # 1. Tap at [621,48][695,122] (Center: 658, 85) - Menu Icon
+            run_adb_command(['shell', 'input', 'tap', '658', '85'], serial)
             time.sleep(2)
+
+            # 2. Swipe 359 1233 372 176 500 (Scroll Down)
             swipe_cmd = ['shell', 'input', 'swipe', '359', '1233', '372', '176', '500']
-            # self.after(0, lambda: self.status_label.configure(text=f"[CMD] Swipe on {serial}", text_color=self.COLOR_ACCENT))
             run_adb_command(swipe_cmd, serial)
-            # self.after(0, lambda: self.status_label.configure(text=f"[SYS] Delay 2s (Swipe Post) on {serial}", text_color=self.COLOR_TEXT_SECONDARY))
             time.sleep(2)  # Delay after swipe
 
-            # 3. Delay 3s and Tap at [112,1208][231,1253] (Center: 172, 1231)
-            # self.after(0, lambda: self.status_label.configure(text=f"[SYS] Delay 3s (Tap 2 Pre) on {serial}", text_color=self.COLOR_TEXT_SECONDARY))
+            # 3. Tap at [112,1208][231,1253] (Center: 172, 1231) - Log Out button
+            run_adb_command(['shell', 'input', 'tap', '172', '1231'], serial)
             time.sleep(3)
-            tap_x_2, tap_y_2 = 172, 1231
-            # self.after(0, lambda: self.status_label.configure(text=f"[CMD] Tap 2 ({tap_x_2},{tap_y_2}) on {serial}", text_color=self.COLOR_ACCENT))
-            run_adb_command(['shell', 'input', 'tap', str(tap_x_2), str(tap_y_2)], serial)
 
-            # 4. Tap at [95,684][347,756] (Center: 221, 720)
-            tap_x_3, tap_y_3 = 221, 720
-            # self.after(0, lambda: self.status_label.configure(text=f"[CMD] Tap 3 ({tap_x_3},{tap_y_3}) on {serial}", text_color=self.COLOR_ACCENT))
-            run_adb_command(['shell', 'input', 'tap', str(tap_x_3), str(tap_y_3)], serial)
+            # 4. Tap at [95,684][347,756] (Center: 221, 720) - Switch Account button
+            run_adb_command(['shell', 'input', 'tap', '221', '720'], serial)
+            time.sleep(5)
 
-            return True
+            # --- PHASE 2: Dynamic Tap ---
+            # Dynamic Tap by Content Desc (The actual name on the screen)
+            success, message = self._run_dynamic_tap_by_content_desc(serial, target_account_name)
+
+            if success:
+                # Wait briefly for FB Lite to load the account.
+                time.sleep(5)
+                return True, f"Successfully switched to '{target_account_name}'"
+            else:
+                return False, f"Failed to tap account '{target_account_name}'. Reason: {message}"
+
         except Exception as e:
-            # print(f"Error during switch sequence on {serial}: {e}")
-            return False
+            return False, f"Error during switch sequence on {serial}: {e}"
+
+    # --- MODIFIED: The original button function (now uses new core helper) ---
+    def _run_switch_account_adb_commands(self, serial, account_names):
+        """[FOR BUTTON USE] Runs the complete switch account ADB sequence on a single device, choosing a random account."""
+        if is_stop_requested.is_set():
+            return False, "Stop requested"
+
+        if not account_names:
+            return False, f"No accounts found for device {serial}."
+
+        # Choose a random account for the one-off button press
+        target_account_name = random.choice(account_names)
+
+        self._update_status_if_enabled(
+            text=f"[CMD] Device {serial}: Attempting random switch to '{target_account_name}'...",
+            color=self.COLOR_ACCENT)
+
+        return self._run_switch_account_by_name(serial, target_account_name)
 
     def _threaded_run_switch_account_sequence(self):
         """Thread wrapper for the switch account sequence, handling multi-device execution and UI updates."""
         if not self.devices:
-            self.after(0, lambda: self.status_label.configure(text="⚠️ No devices detected.",
-                                                              text_color=self.COLOR_WARNING))
+            self._update_status_if_enabled(text="⚠️ No devices detected.",
+                                           color=self.COLOR_WARNING)
             return
 
-        self.after(0, lambda: self.status_label.configure(
-            text="[CMD] Starting SWITCH ACCOUNT sequence on all devices...",
-            text_color=self.COLOR_ACCENT))
+        if not self.account_dir_path:
+            self._update_status_if_enabled(text="⚠️ Select Account Directory first.",
+                                           color=self.COLOR_WARNING)
+            return
+
+        self._update_status_if_enabled(
+            text="[CMD] Starting RANDOM SWITCH ACCOUNT sequence on all devices...",
+            color=self.COLOR_ACCENT)
 
         futures = []
         for serial in self.devices:
-            futures.append(self.executor.submit(self._run_switch_account_adb_commands, serial))
+            account_names = read_accounts_for_device(serial)
+            if not account_names or len(account_names) < 1:
+                self._update_status_if_enabled(
+                    text=f"❌ Device {serial}: No account file found or file is empty.",
+                    color=self.COLOR_DANGER)
+                continue
+
+            # Submit the random switch task
+            futures.append(self.executor.submit(self._run_switch_account_adb_commands, serial, account_names))
 
         # Wait for all devices to finish the sequence
         concurrent.futures.wait(futures)
 
         # Check results and update final status
-        results = [f.result() for f in futures if f.exception() is None]
-        all_success = all(results)
+        all_success = True
+        success_count = 0
+        fail_details = []
+
+        for future in futures:
+            if future.exception() is not None:
+                all_success = False
+                fail_details.append(f"Exception: {future.exception()}")
+            else:
+                success, message = future.result()
+                if success:
+                    success_count += 1
+                else:
+                    all_success = False
+                    fail_details.append(message)
 
         if all_success and self.devices:
-            self.after(0, lambda: self.status_label.configure(
-                text=f"✅ SWITCH ACCOUNT sequence completed successfully on {len(self.devices)} devices.",
-                text_color=self.COLOR_SUCCESS))
+            self._update_status_if_enabled(
+                text=f"✅ SWITCH ACCOUNT sequence completed successfully on {success_count} devices.",
+                color=self.COLOR_SUCCESS)
         else:
-            fail_count = len(self.devices) - sum(results)
-            self.after(0, lambda: self.status_label.configure(
-                text=f"❌ SWITCH ACCOUNT sequence FAILED on {fail_count} device(s). Check device screen/connection.",
-                text_color=self.COLOR_DANGER))
+            fail_count = len(self.devices) - success_count
+            self._update_status_if_enabled(
+                text=f"❌ SWITCH ACCOUNT sequence FAILED on {fail_count} device(s). Details: {fail_details[0] if fail_details else 'Unknown Error'}",
+                color=self.COLOR_DANGER)
 
-    # --- End NEW METHOD: Switch Account Sequence ---
+    # --- End Switch Account Logic ---
 
-    # --- New ADB Utility Methods for Airplane Mode ---
+    # --- NEW HELPER FUNCTION TO AVOID DUPLICATION ---
+    def _execute_link_posting_phase(self, devices_to_post, valid_pairs, is_initial_phase=False):
+        """
+        A helper function to handle the link sharing and typing logic.
+        Returns: bool (True if at least one successful post/share was detected)
+        """
+        current_cycle_success = False
+
+        for index, selected_pair in enumerate(valid_pairs):
+            if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
+                return current_cycle_success
+
+            share_url = selected_pair['url']
+            file_path = selected_pair['file']
+            pair_index = index + 1
+            total_pairs = len(valid_pairs)
+
+            # --- Caption reading logic (SAME AS BEFORE) ---
+            clean_lines = []
+            has_caption = False
+            if file_path and os.path.exists(file_path):
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        lines = f.readlines()
+                    clean_lines = [line.strip() for line in lines if line.strip()]
+                    if clean_lines:
+                        has_caption = True
+                except Exception:
+                    pass
+            # ----------------------------------------
+
+            self._update_status_if_enabled(
+                text=f"[POST] Pair {pair_index}/{total_pairs}: Sharing {share_url[:20]}...",
+                color=self.COLOR_TEXT_PRIMARY)
+
+            # MANDATORY: Run the Share Post (Lagi itong gagana basta may URL)
+            share_command = [
+                'shell', 'am', 'start',
+                '-a', 'android.intent.action.SEND',
+                '-t', 'text/plain',
+                '--es', 'android.intent.extra.TEXT', f'"{share_url}"',
+                'com.facebook.lite'
+            ]
+
+            share_futures = []
+            for serial in devices_to_post:
+                if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
+                    break
+                share_futures.append(self.executor.submit(run_adb_command, share_command, serial))
+
+            concurrent.futures.wait(share_futures)
+            time.sleep(5)  # Wait for share dialogue
+
+            if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
+                return current_cycle_success
+
+            # Try to Find EditText and Type Caption
+            if has_caption:
+                typing_futures = []
+                for serial in devices_to_post:
+                    if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
+                        break
+
+                    random_text = random.choice(clean_lines)
+                    # _run_task_with_retry returns (bool success, str message)
+                    typing_futures.append(
+                        self.executor.submit(self._run_task_with_retry, serial, random_text, pair_index))
+
+                concurrent.futures.wait(typing_futures)
+
+                # Check if ANY typing succeeded
+                if any(f.result()[0] for f in typing_futures if f.exception() is None):
+                    current_cycle_success = True
+
+            # COOLDOWN
+            COOLDOWN = 10
+            self._update_status_if_enabled(
+                text=f"[SYS] Pair {pair_index} processed. Waiting {COOLDOWN}s before next pair...",
+                color=self.COLOR_TEXT_SECONDARY)
+
+            for _ in range(COOLDOWN):
+                if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
+                    return current_cycle_success
+                time.sleep(1)
+
+        return current_cycle_success  # Return status
+
+    # --- MODIFIED: Account Cycle and Auto-Type Loop Logic (Removed outer loop) ---
+
+    def _threaded_find_click_type_LOOP(self, valid_pairs):
+        """
+        The main loop for auto-typing.
+        MODIFIED: Added an initial phase (Phase 0) to post with the CURRENTLY logged-in account
+                  before the account switching cycle begins.
+        """
+        try:
+            # --- 1. Initialization and Validation ---
+            if not self.devices:
+                self._update_status_if_enabled(text="⚠️ No devices, stopping loop.",
+                                               color=self.COLOR_WARNING)
+                return
+
+            # Initialize Account Cycle State for all devices
+            self.device_account_cycle = {}
+            max_accounts = 0
+            for serial in self.devices:
+                account_names = read_accounts_for_device(serial)
+                if account_names:
+                    self.device_account_cycle[serial] = {
+                        'names': account_names
+                    }
+                    max_accounts = max(max_accounts, len(account_names))
+
+            if max_accounts == 0 and not valid_pairs:
+                self._update_status_if_enabled(text="⚠️ No links or accounts found. Stopping loop.",
+                                               color=self.COLOR_WARNING)
+                return
+
+            # --- 2. NEW PHASE 0: Initial Post/Share with Current Account ---
+            total_successful_posts = 0
+
+            if valid_pairs:
+                self._update_status_if_enabled(
+                    text="[PHASE 0] Starting INITIAL POST/SHARE with CURRENTLY logged-in accounts...",
+                    color=self.COLOR_ACCENT)
+
+                # Execute the link posting phase on ALL current devices
+                initial_post_success = self._execute_link_posting_phase(self.devices, valid_pairs,
+                                                                        is_initial_phase=True)
+
+                if initial_post_success:
+                    self._update_status_if_enabled(
+                        text=f"✅ PHASE 0 COMPLETE. Initial share successful on current accounts.",
+                        color=self.COLOR_SUCCESS)
+                    total_successful_posts += 1
+                else:
+                    self._update_status_if_enabled(
+                        text=f"⚠️ PHASE 0 COMPLETE. Initial share finished, but no successful posts detected.",
+                        color=self.COLOR_WARNING)
+
+                # Small delay before starting the account cycle
+                time.sleep(3)
+            # --- END OF NEW PHASE 0 ---
+
+            # --- 3. Main Automation Cycle (Runs ONCE through all accounts) ---
+
+            # Inner Loop: Iterate through all accounts
+            for cycle_index in range(max_accounts):
+                if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
+                    self._update_status_if_enabled(text="[SYS] Automation stopped by user.",
+                                                   color=self.COLOR_WARNING)
+                    return  # Exit cleanly
+
+                self._update_status_if_enabled(
+                    text=f"[CYCLE] Starting Account Set {cycle_index + 1}/{max_accounts}...",
+                    color=self.COLOR_ACCENT)
+
+                # 3a. Switch Account for the current index on all devices
+                switch_futures = []
+                devices_to_post = []
+
+                for serial, data in self.device_account_cycle.items():
+                    if cycle_index < len(data['names']):
+                        target_name = data['names'][cycle_index]
+
+                        self._update_status_if_enabled(
+                            text=f"[CMD] Device {serial}: Switching to {target_name}...",
+                            color=self.COLOR_ACCENT)
+
+                        # Submit the switch task
+                        switch_futures.append(
+                            self.executor.submit(self._run_switch_account_by_name, serial, target_name))
+                        devices_to_post.append(serial)
+                    else:
+                        # Device ran out of accounts, skip it for this and future post cycles
+                        self._update_status_if_enabled(
+                            text=f"[CMD] Device {serial}: All accounts processed. Skipping post.",
+                            color=self.COLOR_TEXT_SECONDARY)
+
+                # Wait for all devices to complete the switch attempt
+                concurrent.futures.wait(switch_futures)
+
+                # --- 3b. LINK POSTING PHASE (Run all pairs with the currently switched account) ---
+
+                if not devices_to_post:
+                    self._update_status_if_enabled(
+                        text="[INFO] No active devices with remaining accounts. Ending automation.",
+                        color=self.COLOR_WARNING)
+                    break  # Exit the account cycling loop
+
+                self._update_status_if_enabled(
+                    text=f"[POST] {len(devices_to_post)} devices active. Starting {len(valid_pairs)} link shares...",
+                    color=self.COLOR_ACCENT)
+
+                current_cycle_success = self._execute_link_posting_phase(devices_to_post, valid_pairs,
+                                                                         is_initial_phase=False)
+
+                # Check if ANY typing succeeded in this cycle
+                if current_cycle_success:
+                    total_successful_posts += 1
+                    self._update_status_if_enabled(
+                        text=f"✅ Account Set {cycle_index + 1} finished (Successful post detected). Moving to next account.",
+                        color=self.COLOR_SUCCESS)
+                else:
+                    self._update_status_if_enabled(
+                        text=f"⚠️ Account Set {cycle_index + 1} finished (No successful posts/shares detected). Moving to next account.",
+                        color=self.COLOR_WARNING)
+
+                # Short delay before the next account switch attempt
+                time.sleep(3)
+
+            # --- 4. Finalization ---
+            self._update_status_if_enabled(
+                text=f"✅ AUTOMATION COMPLETE. All {max_accounts} accounts cycled once. {total_successful_posts} successful post/share runs detected.",
+                color=self.COLOR_SUCCESS)
+
+        except Exception as e:
+            print(f"Error in auto-type loop: {e}")
+            self._update_status_if_enabled(
+                text=f"❌ CRITICAL ERROR in auto-type task: {e}", color=self.COLOR_DANGER)
+        finally:
+            # Ensure the flag and button are reset when the process finishes or errors
+            self.after(0, self.stop_auto_type_loop)
+
+    # --- WAKAS NG MODIFIED: Account Cycle and Auto-Type Loop Logic ---
+
+    # --- Existing Helper Logic ---
+    # The functions below remain largely the same, but the call to _run_find_click_type_on_device
+    # and its related loop logic are now inside the larger account cycling structure.
+
+    # --- SIMULA NG PAGDAGDAG NG RETRY LOGIC (Wrapper Function) ---
+
+    def _run_task_with_retry(self, serial, text_to_send, pair_index, max_retries=5):
+        """
+        Runs the find/click/type logic with retries to ensure completion on a single device.
+        """
+        for attempt in range(max_retries):
+            # 1. Check stop flags
+            if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
+                return False, "Stop requested"
+
+            # 2. Run the core action (Find, Click, Type)
+            success, message = self._run_find_click_type_on_device(serial, text_to_send)
+
+            if success:
+                self._update_status_if_enabled(
+                    text=f"✅ Pair {pair_index} on {serial} SUCCESSFUL (Attempt {attempt + 1}).",
+                    color=self.COLOR_SUCCESS)
+                return True, message
+            else:
+                # 3. Handle failure and retry
+                if attempt < max_retries - 1:
+                    wait_time = 3 + attempt * 2  # Increase wait time with each attempt (3s, 5s, 7s, 9s, 11s)
+                    self._update_status_if_enabled(
+                        text=f"⚠️ Pair {pair_index} on {serial}: Failed ({message}). Retrying in {wait_time}s (Attempt {attempt + 2}/{max_retries}).",
+                        color=self.COLOR_WARNING)
+
+                    # Pause the single thread before the next retry
+                    time.sleep(wait_time)
+                else:
+                    self._update_status_if_enabled(
+                        text=f"❌ Pair {pair_index} on {serial}: FAILED after {max_retries} attempts ({message}). Moving to next pair.",
+                        color=self.COLOR_DANGER)
+                    return False, message
+
+        return False, "Max retries reached"
+
+    # --- WAKAS NG PAGDAGDAG NG RETRY LOGIC ---
+
+    def _run_find_click_type_on_device(self, serial, text_to_send):
+        """
+        The core logic that runs on each device to find, click, and type.
+        Returns (bool success, str message)
+        """
+        local_xml_file = f"ui_dump_{serial}_{uuid.uuid4()}.xml"
+
+        try:
+            if self.is_auto_typing.is_set() and not is_stop_requested.is_set():
+                # Step 1: Dump UI
+                dump_cmd = ['shell', 'uiautomator', 'dump', '/data/local/tmp/ui.xml']
+                success, out = run_adb_command(dump_cmd, serial)
+                if not success:
+                    # print(f"[{serial}] Failed to dump UI.")
+                    return False, "Failed to dump UI"
+            else:
+                return False, "Stop requested"
+
+            if self.is_auto_typing.is_set() and not is_stop_requested.is_set():
+                # Step 2: Pull XML
+                pull_cmd = ['pull', '/data/local/tmp/ui.xml', local_xml_file]
+                success, out = run_adb_command(pull_cmd, serial)
+                if not success:
+                    # print(f"[{serial}] Failed to pull UI XML.")
+                    return False, "Failed to pull UI XML"
+            else:
+                return False, "Stop requested"
+
+            if self.is_auto_typing.is_set() and not is_stop_requested.is_set():
+                # Step 3: Parse XML
+                if not os.path.exists(local_xml_file):
+                    # print(f"[{serial}] XML file not found locally.")
+                    return False, "XML file not found"
+
+                tree = ET.parse(local_xml_file)
+                root = tree.getroot()
+
+                # Step 4: Find EditText
+                # Find the first node with class="android.widget.EditText"
+                time.sleep(6)
+                edit_text_node = root.find('.//node[@class="android.widget.EditText"]')
+
+                if edit_text_node is None:
+                    # print(f"[{serial}] No EditText found.")
+                    return False, "No EditText found (Caption box not ready/visible)"
+
+                # Step 5: Get Bounds
+                bounds_str = edit_text_node.get('bounds')  # e.g., "[100,200][300,400]"
+                if not bounds_str:
+                    # print(f"[{serial}] EditText found but has no bounds.")
+                    return False, "EditText found but has no bounds"
+
+                coords = re.findall(r'\d+', bounds_str)
+                if len(coords) < 4:
+                    # print(f"[{serial}] Invalid bounds string.")
+                    return False, "Invalid bounds string"
+
+                x1, y1, x2, y2 = map(int, coords[:4])
+
+                # Step 6: Calculate Center
+                tap_x = (x1 + x2) // 2
+                tap_y = (y1 + y2) // 2
+
+            else:
+                return False, "Stop requested"
+
+            if self.is_auto_typing.is_set() and not is_stop_requested.is_set():
+                # Step 7: Click
+                tap_cmd = ['shell', 'input', 'tap', str(tap_x), str(tap_y)]
+                success, out = run_adb_command(tap_cmd, serial)
+                if not success:
+                    # print(f"[{serial}] Failed to tap.")
+                    return False, "Failed to tap"
+
+                # Mas matagal na delay para masigurong lalabas ang keyboard at handa na ang device.
+                time.sleep(3)  # <-- BINAGO ang halaga para sa mas matibay na operasyon.
+
+            if self.is_auto_typing.is_set() and not is_stop_requested.is_set():
+                # Step 8: Type (This uses the FAST TYPING version of run_text_command)
+                # This will now also click the "Post" button because run_text_command is modified
+                run_text_command(text_to_send, serial)
+                # print(f"[{serial}] Click and type successful.")
+                return True, "Success"
+            else:
+                return False, "Stop requested"
+
+        except ET.ParseError:
+            # print(f"[{serial}] Failed to parse XML.")
+            return False, "Failed to parse XML"
+        except Exception as e:
+            # print(f"[{serial}] Error in find/click/type: {e}")
+            return False, str(e)
+        finally:
+            # Step 9: Cleanup
+            if os.path.exists(local_xml_file):
+                os.remove(local_xml_file)
+
+    # --- End of Auto-Type Helper Logic ---
 
     def _threaded_airplane_mode(self, mode):
         """Helper function to run airplane mode commands in a thread."""
         if not self.devices:
-            self.after(0, lambda: self.status_label.configure(text="⚠️ No devices detected.",
-                                                              text_color=self.COLOR_WARNING))
+            self._update_status_if_enabled(text="⚠️ No devices detected.",
+                                           color=self.COLOR_WARNING)
             return
 
         state = '1' if mode == 'enable' else '0'
         name = 'ENABLE' if mode == 'enable' else 'DISABLE'
 
-        self.after(0, lambda: self.status_label.configure(
-            text=f"[CMD] Sending {name} AIRPLANE MODE command...", text_color=self.COLOR_ACCENT))
+        self._update_status_if_enabled(
+            text=f"[CMD] Sending {name} AIRPLANE MODE command...", color=self.COLOR_ACCENT)
 
         # 1. Set the system setting
         set_cmd = ['shell', 'settings', 'put', 'global', 'airplane_mode_on', state]
@@ -801,8 +1460,8 @@ class AdbControllerApp(ctk.CTk):
             self.executor.submit(run_adb_command, set_cmd, serial)
             self.executor.submit(run_adb_command, broadcast_cmd, serial)
 
-        self.after(0, lambda: self.status_label.configure(
-            text=f"✅ AIRPLANE MODE {name} command sent to all devices.", text_color=self.COLOR_SUCCESS))
+        self._update_status_if_enabled(
+            text=f"✅ AIRPLANE MODE {name} command sent to all devices.", color=self.COLOR_SUCCESS)
 
     def enable_airplane_mode(self):
         """Enables Airplane Mode on all connected devices."""
@@ -824,21 +1483,21 @@ class AdbControllerApp(ctk.CTk):
             self.apk_path = file_path
             self.apk_path_entry.delete(0, tk.END)
             self.apk_path_entry.insert(0, os.path.basename(file_path))
-            self.status_label.configure(text=f"✅ APK SELECTED: {os.path.basename(file_path)}",
-                                        text_color=self.COLOR_SUCCESS)
+            self._update_status_if_enabled(text=f"✅ APK SELECTED: {os.path.basename(file_path)}",
+                                           color=self.COLOR_SUCCESS)
 
     def install_apk_to_devices(self):
         """Installs the selected APK on all connected devices."""
         if not self.apk_path or not os.path.exists(self.apk_path):
-            self.status_label.configure(text="⚠️ Please select a valid APK file first.", text_color=self.COLOR_WARNING)
+            self._update_status_if_enabled(text="⚠️ Please select a valid APK file first.", color=self.COLOR_WARNING)
             return
 
         if not self.devices:
-            self.status_label.configure(text="⚠️ No devices detected.", text_color=self.COLOR_WARNING)
+            self._update_status_if_enabled(text="⚠️ No devices detected.", color=self.COLOR_WARNING)
             return
 
-        self.status_label.configure(text=f"[CMD] Installing {os.path.basename(self.apk_path)} on all devices...",
-                                    text_color=self.COLOR_ACCENT)
+        self._update_status_if_enabled(text=f"[CMD] Installing {os.path.basename(self.apk_path)} on all devices...",
+                                       color=self.COLOR_ACCENT)
 
         command = ['install', '-r', self.apk_path]  # -r flag means reinstall if it already exists
 
@@ -855,11 +1514,11 @@ class AdbControllerApp(ctk.CTk):
         # Check results and update status
         all_success = all(success for _, success, _ in results)
         if all_success:
-            self.status_label.configure(text="✅ APK INSTALL SUCCESSFUL.", text_color=self.COLOR_SUCCESS)
+            self._update_status_if_enabled(text="✅ APK INSTALL SUCCESSFUL.", color=self.COLOR_SUCCESS)
         else:
             error_count = sum(1 for _, success, _ in results if not success)
-            self.status_label.configure(text=f"❌ INSTALLATION FAILED on {error_count} device(s).",
-                                        text_color=self.COLOR_DANGER)
+            self._update_status_if_enabled(text=f"❌ INSTALLATION FAILED on {error_count} device(s).",
+                                           color=self.COLOR_DANGER)
 
     # --- Existing Methods (Updated for Styling) ---
 
@@ -867,7 +1526,7 @@ class AdbControllerApp(ctk.CTk):
         # Adjusted error handling in _update_in_thread for clarity
         def _update_in_thread():
             try:
-                self.status_label.configure(text="[SYS] Downloading latest version...", text_color=self.COLOR_ACCENT)
+                self._update_status_if_enabled(text="[SYS] Downloading latest version...", color=self.COLOR_ACCENT)
 
                 response = requests.get(UPDATE_URL)
                 response.raise_for_status()  # Raise HTTPError for bad status codes (4xx or 5xx)
@@ -897,43 +1556,63 @@ class AdbControllerApp(ctk.CTk):
 
             except requests.exceptions.HTTPError as http_err:
                 status_code = http_err.response.status_code
-                self.after(0, lambda: self.status_label.configure(
+                self._update_status_if_enabled(
                     text=f"❌ ERROR: Update download failed. HTTP Status: {status_code}",
-                    text_color=self.COLOR_DANGER))
+                    color=self.COLOR_DANGER)
                 self.after(0, lambda: messagebox.showerror(
                     "Update Download Failed",
                     f"Failed to download update (HTTP Error {status_code}). Check if the update file exists at the URL."))
             except requests.exceptions.ConnectionError:
-                self.after(0, lambda: self.status_label.configure(
+                self._update_status_if_enabled(
                     text="❌ ERROR: Update download failed. Connection Refused.",
-                    text_color=self.COLOR_DANGER))
+                    color=self.COLOR_DANGER)
                 self.after(0, lambda: messagebox.showerror(
                     "Update Download Failed",
-                    "Failed to download update. Cannot connect to the server. Check your internet connection or firewall."))
+                    "Cannot connect to the update server. Check your internet connection, firewall, or proxy."))
             except requests.exceptions.Timeout:
-                self.after(0, lambda: self.status_label.configure(
+                self._update_status_if_enabled(
                     text="❌ ERROR: Update download timed out.",
-                    text_color=self.COLOR_DANGER))
+                    color=self.COLOR_DANGER)
                 self.after(0, lambda: messagebox.showerror(
                     "Update Download Failed",
                     "Update download timed out. Your network might be slow or unstable."))
             except requests.exceptions.RequestException as e:
-                self.after(0, lambda: self.status_label.configure(
+                self._update_status_if_enabled(
                     text=f"❌ ERROR: Update download failed. Details: {e.__class__.__name__}",
-                    text_color=self.COLOR_DANGER))
+                    color=self.COLOR_DANGER)
                 self.after(0, lambda: messagebox.showerror(
                     "Update Download Failed",
                     f"An error occurred during download: {e.__class__.__name__}. Check logs for details."))
             except Exception as e:
-                self.after(0, lambda: self.status_label.configure(
+                self._update_status_if_enabled(
                     text=f"❌ ERROR: An unexpected update error occurred: {e}",
-                    text_color=self.COLOR_DANGER))
+                    color=self.COLOR_DANGER)
                 self.after(0, lambda: messagebox.showerror(
                     "Update Error",
                     f"An unexpected file operation error occurred.\nError: {e}"))
 
         update_thread = threading.Thread(target=_update_in_thread, daemon=True)
         update_thread.start()
+
+    def ask_for_update(self, latest_version):
+        # --- FIXED POPUP ---
+        if self.is_update_prompt_showing:
+            return  # An update prompt is already active
+
+        try:
+            self.is_update_prompt_showing = True
+            title = "New ADB Commander Update!"
+            message = (
+                f"An improved version ({latest_version}) is now available!\n\n"
+                "New Auto Click what's on your mind Auto Type caption auto switch acc This update contains the latest upgrades and performance improvements for faster and more reliable control of your devices.\n\n"
+                "The app will close and restart to complete the update. Would you like to update now?"
+            )
+
+            response = messagebox.askyesno(title, message)
+            if response:
+                self.update_app()
+        finally:
+            self.is_update_prompt_showing = False  # Ensure this always runs
 
     # --- NEW METHODS: Dynamic Link/Caption Pair Management ---
 
@@ -979,7 +1658,7 @@ class AdbControllerApp(ctk.CTk):
         browse_button = ctk.CTkButton(caption_frame, text="BROWSE TXT", corner_radius=8, width=120, height=35,
                                       fg_color=self.COLOR_BORDER, hover_color=self.COLOR_TEXT_SECONDARY,
                                       font=self.FONT_BUTTON,
-                                      command=lambda: self.browse_share_pair_file(file_path_entry))
+                                      command=lambda: self.browse_share_pair_file(target_entry=file_path_entry))
         browse_button.grid(row=0, column=1, sticky='e')
 
         # Add the pair to the list and pack the frame
@@ -997,7 +1676,7 @@ class AdbControllerApp(ctk.CTk):
             if pair['frame'] == pair_frame_to_remove:
                 pair['frame'].destroy()
                 self.share_pairs.pop(i)
-                self.status_label.configure(text=f"✅ Link/Caption Pair removed.", text_color=self.COLOR_SUCCESS)
+                self._update_status_if_enabled(text=f"✅ Link/Caption Pair removed.", color=self.COLOR_SUCCESS)
                 # If auto-typing is running, stop and restart to update the list of texts
                 if self.is_auto_typing.is_set():
                     self.stop_auto_type_loop()
@@ -1013,8 +1692,8 @@ class AdbControllerApp(ctk.CTk):
         if file_path:
             target_entry.delete(0, tk.END)
             target_entry.insert(0, file_path)
-            self.status_label.configure(text=f"✅ FILE SELECTED: {os.path.basename(file_path)}",
-                                        text_color=self.COLOR_SUCCESS)
+            self._update_status_if_enabled(text=f"✅ FILE SELECTED: {os.path.basename(file_path)}",
+                                           color=self.COLOR_SUCCESS)
             # Automatically stop and restart the loop if a new file is selected while running
             if self.is_auto_typing.is_set():
                 self.stop_auto_type_loop()
@@ -1031,12 +1710,12 @@ class AdbControllerApp(ctk.CTk):
                 file_paths.append(file_path)
 
         if not file_paths:
-            self.status_label.configure(text="⚠️ Please select a text file for at least one pair.",
-                                        text_color=self.COLOR_WARNING)
+            self._update_status_if_enabled(text="⚠️ Please select a text file for at least one pair.",
+                                           color=self.COLOR_WARNING)
             return
 
         if not self.devices:
-            self.status_label.configure(text="⚠️ No devices detected.", text_color=self.COLOR_WARNING)
+            self._update_status_if_enabled(text="⚠️ No devices detected.", color=self.COLOR_WARNING)
             return
 
         # --- MODIFIED: Select a random file path and read its content ---
@@ -1049,26 +1728,26 @@ class AdbControllerApp(ctk.CTk):
             clean_lines = [line.strip() for line in lines if line.strip()]
 
             if not clean_lines:
-                self.status_label.configure(
+                self._update_status_if_enabled(
                     text=f"⚠️ The selected file '{os.path.basename(random_file_path)}' is empty.",
-                    text_color=self.COLOR_WARNING)
+                    color=self.COLOR_WARNING)
                 return
 
-            self.status_label.configure(
+            self._update_status_if_enabled(
                 text=f"[CMD] Sending random text from file '{os.path.basename(random_file_path)}' to all devices...",
-                text_color=self.COLOR_ACCENT)
+                color=self.COLOR_ACCENT)
 
             for device_serial in self.devices:
                 random_text = random.choice(clean_lines)
                 self.executor.submit(run_text_command, random_text, device_serial)
 
-            self.status_label.configure(text=f"✅ Text commands submitted.", text_color=self.COLOR_SUCCESS)
+            self._update_status_if_enabled(text=f"✅ Text commands submitted.", color=self.COLOR_SUCCESS)
 
 
         except FileNotFoundError:
-            self.status_label.configure(text="❌ ERROR: File not found.", text_color=self.COLOR_DANGER)
+            self._update_status_if_enabled(text="❌ ERROR: File not found.", color=self.COLOR_DANGER)
         except Exception as e:
-            self.status_label.configure(text=f"❌ ERROR: An error occurred: {e}", text_color=self.COLOR_DANGER)
+            self._update_status_if_enabled(text=f"❌ ERROR: An error occurred: {e}", color=self.COLOR_DANGER)
 
     def send_text_to_devices(self):
         send_thread = threading.Thread(target=self._threaded_send_text, daemon=True)
@@ -1086,19 +1765,17 @@ class AdbControllerApp(ctk.CTk):
             share_url = pair['url_entry'].get()
             file_path = pair['file_entry'].get()
 
-            # --- BINAGO ANG LOGIC DITO ---
             # Ituring na valid basta may URL. Ang file_path ay optional na.
             if share_url:
                 valid_pairs.append({'url': share_url, 'file': file_path})
-            # --- WAKAS NG PAGBABAGO ---
 
         if not valid_pairs:
-            self.status_label.configure(text="⚠️ No valid Links found. Please enter at least one URL.",
-                                        text_color=self.COLOR_WARNING)
+            self._update_status_if_enabled(text="⚠️ No valid Links found. Please enter at least one URL.",
+                                           color=self.COLOR_WARNING)
             return
 
         if not self.devices:
-            self.status_label.configure(text="⚠️ No devices detected.", text_color=self.COLOR_WARNING)
+            self._update_status_if_enabled(text="⚠️ No devices detected.", color=self.COLOR_WARNING)
             return
 
         # Set the flag
@@ -1110,7 +1787,7 @@ class AdbControllerApp(ctk.CTk):
                                               hover_color=self.COLOR_DANGER_HOVER,
                                               text_color=self.COLOR_TEXT_PRIMARY)
 
-        self.status_label.configure(text="[CMD] Auto-type loop STARTED.", text_color=self.COLOR_SUCCESS)
+        self._update_status_if_enabled(text="[CMD] Auto-type loop STARTED.", color=self.COLOR_SUCCESS)
 
         # Start the loop thread, passing the list of valid pairs
         threading.Thread(target=self._threaded_find_click_type_LOOP, args=(valid_pairs,), daemon=True).start()
@@ -1136,327 +1813,18 @@ class AdbControllerApp(ctk.CTk):
         else:
             self.start_auto_type_loop()
 
-    # --- SIMULA NG PAGDAGDAG NG RETRY LOGIC (Wrapper Function) ---
-
-    def _run_task_with_retry(self, serial, text_to_send, pair_index, max_retries=5):
-        """
-        Runs the find/click/type logic with retries to ensure completion on a single device.
-        """
-        for attempt in range(max_retries):
-            # 1. Check stop flags
-            if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
-                return False, "Stop requested"
-
-            # 2. Run the core action (Find, Click, Type)
-            success, message = self._run_find_click_type_on_device(serial, text_to_send)
-
-            if success:
-                self.after(0, lambda: self.status_label.configure(
-                    text=f"✅ Pair {pair_index} on {serial} SUCCESSFUL (Attempt {attempt + 1}).",
-                    text_color=self.COLOR_SUCCESS))
-                return True, message
-            else:
-                # 3. Handle failure and retry
-                if attempt < max_retries - 1:
-                    wait_time = 3 + attempt * 2  # Increase wait time with each attempt (3s, 5s, 7s, 9s, 11s)
-                    self.after(0, lambda: self.status_label.configure(
-                        text=f"⚠️ Pair {pair_index} on {serial}: Failed ({message}). Retrying in {wait_time}s (Attempt {attempt + 2}/{max_retries}).",
-                        text_color=self.COLOR_WARNING))
-
-                    # Pause the single thread before the next retry
-                    time.sleep(wait_time)
-                else:
-                    self.after(0, lambda: self.status_label.configure(
-                        text=f"❌ Pair {pair_index} on {serial}: FAILED after {max_retries} attempts ({message}). Moving to next pair.",
-                        text_color=self.COLOR_DANGER))
-                    return False, message
-
-        return False, "Max retries reached"
-
-    # --- WAKAS NG PAGDAGDAG NG RETRY LOGIC ---
-
-    def _threaded_find_click_type_LOOP(self, valid_pairs):
-        """
-        The main 'while true' loop for auto-typing.
-        (REMOVED the final tap/swipe sequence as it's now in the SWITCH ACC button)
-        """
-
-        try:
-            # Re-enable the loop using the self.is_auto_typing flag
-            while self.is_auto_typing.is_set() and not is_stop_requested.is_set():
-
-                # Itakda ang flag na ito sa 'False' sa simula ng BAWAT cycle
-                success_achieved_in_this_cycle = False
-
-                if not self.devices:
-                    self.after(0, lambda: self.status_label.configure(text="⚠️ No devices, stopping loop.",
-                                                                      text_color=self.COLOR_WARNING))
-                    break
-
-                # --- Iterate through all valid pairs sequentially in this cycle ---
-                for index, selected_pair in enumerate(valid_pairs):
-                    if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
-                        break  # Stop if flag is cleared during iteration
-
-                    share_url = selected_pair['url']
-                    file_path = selected_pair['file']
-                    pair_index = index + 1
-                    total_pairs = len(valid_pairs)
-
-                    self.after(0, lambda: self.status_label.configure(
-                        text=f"[CMD] Processing Pair {pair_index}/{total_pairs}: Sharing {share_url[:20]}...",
-                        text_color=self.COLOR_ACCENT))
-
-                    # --- SIMULA NG PAGBABAGO: I-check kung may caption file ---
-                    clean_lines = []
-                    has_caption = False  # Default: Walang caption
-
-                    if file_path and os.path.exists(file_path):
-                        # May file path, subukang basahin
-                        try:
-                            with open(file_path, 'r', encoding='utf-8') as f:
-                                lines = f.readlines()
-                            clean_lines = [line.strip() for line in lines if line.strip()]
-
-                            if clean_lines:
-                                has_caption = True  # May nabasa tayong text!
-                            else:
-                                # May file pero walang laman
-                                self.after(0, lambda: self.status_label.configure(
-                                    text=f"⚠️ Caption file '{os.path.basename(file_path)}' is empty. Share-only mode.",
-                                    text_color=self.COLOR_WARNING))
-                        except Exception as e:
-                            # Nagka-error sa pagbasa ng file
-                            self.after(0, lambda: self.status_label.configure(
-                                text=f"❌ Error reading file: {e}. Share-only mode.", text_color=self.COLOR_DANGER))
-                    else:
-                        # Walang file path na pinili
-                        self.after(0, lambda: self.status_label.configure(
-                            text=f"ℹ️ No caption file for Pair {pair_index}. Share-only mode.",
-                            text_color=self.COLOR_TEXT_SECONDARY))
-                    # --- WAKAS NG PAGBABAGO ---
-
-                    # 2. MANDATORY: Run the Share Post (Lagi itong gagana basta may URL)
-                    share_command = [
-                        'shell', 'am', 'start',
-                        '-a', 'android.intent.action.SEND',
-                        '-t', 'text/plain',
-                        '--es', 'android.intent.extra.TEXT', f'"{share_url}"',  # Uses quotes for robust ADB parsing
-                        'com.facebook.lite'
-                    ]
-
-                    share_futures = []
-                    for serial in self.devices:
-                        if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
-                            break
-                        share_futures.append(self.executor.submit(run_adb_command, share_command, serial))
-
-                    # Hintayin matapos ang share command bago mag-delay
-                    concurrent.futures.wait(share_futures)
-
-                    # MAGHINTAY ng 5 segundo para lumabas ang Share Dialogue sa device.
-                    time.sleep(5)
-
-                    if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
-                        break
-
-                    # 3. Try to Find EditText and Type Caption (KUNG 'has_caption' ay True lang)
-                    # --- SIMULA NG PAGBABAGO: Idagdag ang 'if has_caption:' ---
-                    if has_caption:
-                        self.after(0, lambda: self.status_label.configure(
-                            text=f"[CMD] Pair {pair_index}: Starting typing and retry attempts...",
-                            text_color=self.COLOR_ACCENT))
-
-                        futures = []
-                        for serial in self.devices:
-                            if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
-                                break
-
-                            random_text = random.choice(clean_lines)  # Ligtas na ito
-                            # Call the retry wrapper function
-                            futures.append(
-                                self.executor.submit(self._run_task_with_retry, serial, random_text, pair_index))
-
-                        # Wait for all devices to complete the typing/posting attempt (including all retries)
-                        concurrent.futures.wait(futures)
-
-                        # 4. Check results: Did ANY device succeed after retries?
-                        pair_success = False
-                        for future in futures:
-                            if future.exception() is None:
-                                # The result of _run_task_with_retry is (bool success, str message)
-                                success, _ = future.result()
-                                if success:
-                                    pair_success = True
-                    else:
-                        # --- WAKAS NG PAGBABAGO (if has_caption) ---
-                        # --- SIMULA NG PAGBABAGO (else block) ---
-                        # Walang caption, kaya ang "share" pa lang ay success na.
-                        self.after(0, lambda: self.status_label.configure(
-                            text=f"✅ Pair {pair_index}: SHARE-ONLY complete.",
-                            text_color=self.COLOR_SUCCESS))
-                        pair_success = True
-                    # --- WAKAS NG PAGBABAGO (else block) ---
-
-                    if pair_success:
-                        # Kung successful ang pag-type/post, itakda ang overall flag
-                        success_achieved_in_this_cycle = True
-
-                    # --- SIMULA NG PAGDAGDAG NG COOLDOWN PARA TAPUSIN ANG BAWAT PAIR ---
-                    # MAGHINTAY ng 10 segundo bago magpatuloy sa susunod na link.
-                    COOLDOWN = 10
-                    self.after(0, lambda: self.status_label.configure(
-                        text=f"[SYS] Pair {pair_index} processed. Waiting {COOLDOWN}s before next pair...",
-                        text_color=self.COLOR_TEXT_SECONDARY))
-
-                    for _ in range(COOLDOWN):
-                        if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
-                            break
-                        time.sleep(1)
-
-                    if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
-                        break
-                    # --- WAKAS NG PAGDAGDAG NG COOLDOWN ---
-
-                # --- End of sequential processing for all pairs (REMOVED FINAL COMMANDS) ---
-
-                # Check if an overall success was achieved (at least one post was successfully made)
-                if success_achieved_in_this_cycle:
-                    self.after(0, lambda: self.status_label.configure(
-                        text="✅ AUTO-TYPE SUCCESSFUL (Posted/Shared). Stopping loop.",
-                        text_color=self.COLOR_SUCCESS))
-                    break  # Exit the while loop
-                else:
-                    # Maghintay ng 5 segundo bago subukang muli (next while loop iteration)
-                    self.after(0, lambda: self.status_label.configure(
-                        text="[SYS] All pairs processed (No successful post). Waiting 5s for next cycle...",
-                        text_color=self.COLOR_TEXT_PRIMARY))
-
-                    wait_duration = 5  # 5 segundo
-                    for _ in range(wait_duration):
-                        if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
-                            break
-                        time.sleep(1)
-
-
-        except Exception as e:
-            print(f"Error in auto-type loop: {e}")
-            self.after(0, lambda: self.status_label.configure(
-                text=f"❌ CRITICAL ERROR in auto-type task: {e}", text_color=self.COLOR_DANGER))
-        finally:
-            # Ensure the flag and button are reset when the loop breaks or errors
-            self.after(0, self.stop_auto_type_loop)
-
-    # --- WAKAS NG PAG-AYOS ---
-
-    def _run_find_click_type_on_device(self, serial, text_to_send):
-        """
-        The core logic that runs on each device to find, click, and type.
-        Returns (bool success, str message)
-        """
-        local_xml_file = f"ui_dump_{serial}_{uuid.uuid4()}.xml"
-
-        try:
-            if self.is_auto_typing.is_set() and not is_stop_requested.is_set():
-                # Step 1: Dump UI
-                dump_cmd = ['shell', 'uiautomator', 'dump', '/data/local/tmp/ui.xml']
-                success, out = run_adb_command(dump_cmd, serial)
-                if not success:
-                    # print(f"[{serial}] Failed to dump UI.")
-                    return False, "Failed to dump UI"
-            else:
-                return False, "Stop requested"
-
-            if self.is_auto_typing.is_set() and not is_stop_requested.is_set():
-                # Step 2: Pull XML
-                pull_cmd = ['pull', '/data/local/tmp/ui.xml', local_xml_file]
-                success, out = run_adb_command(pull_cmd, serial)
-                if not success:
-                    # print(f"[{serial}] Failed to pull UI XML.")
-                    return False, "Failed to pull UI XML"
-            else:
-                return False, "Stop requested"
-
-            if self.is_auto_typing.is_set() and not is_stop_requested.is_set():
-                # Step 3: Parse XML
-                if not os.path.exists(local_xml_file):
-                    # print(f"[{serial}] XML file not found locally.")
-                    return False, "XML file not found"
-
-                tree = ET.parse(local_xml_file)
-                root = tree.getroot()
-
-                # Step 4: Find EditText
-                # Find the first node with class="android.widget.EditText"
-                edit_text_node = root.find('.//node[@class="android.widget.EditText"]')
-
-                if edit_text_node is None:
-                    # print(f"[{serial}] No EditText found.")
-                    return False, "No EditText found (Caption box not ready/visible)"
-
-                # Step 5: Get Bounds
-                bounds_str = edit_text_node.get('bounds')  # e.g., "[100,200][300,400]"
-                if not bounds_str:
-                    # print(f"[{serial}] EditText found but has no bounds.")
-                    return False, "EditText found but has no bounds"
-
-                coords = re.findall(r'\d+', bounds_str)
-                if len(coords) < 4:
-                    # print(f"[{serial}] Invalid bounds string.")
-                    return False, "Invalid bounds string"
-
-                x1, y1, x2, y2 = map(int, coords[:4])
-
-                # Step 6: Calculate Center
-                tap_x = (x1 + x2) // 2
-                tap_y = (y1 + y2) // 2
-
-            else:
-                return False, "Stop requested"
-
-            if self.is_auto_typing.is_set() and not is_stop_requested.is_set():
-                # Step 7: Click
-                tap_cmd = ['shell', 'input', 'tap', str(tap_x), str(tap_y)]
-                success, out = run_adb_command(tap_cmd, serial)
-                if not success:
-                    # print(f"[{serial}] Failed to tap.")
-                    return False, "Failed to tap"
-
-                # Mas matagal na delay para masigurong lalabas ang keyboard at handa na ang device.
-                time.sleep(3)  # <-- BINAGO ang halaga para sa mas matibay na operasyon.
-
-            if self.is_auto_typing.is_set() and not is_stop_requested.is_set():
-                # Step 8: Type
-                # This will now also click the "Post" button because run_text_command is modified
-                run_text_command(text_to_send, serial)
-                # print(f"[{serial}] Click and type successful.")
-                return True, "Success"
-            else:
-                return False, "Stop requested"
-
-        except ET.ParseError:
-            # print(f"[{serial}] Failed to parse XML.")
-            return False, "Failed to parse XML"
-        except Exception as e:
-            # print(f"[{serial}] Error in find/click/type: {e}")
-            return False, str(e)
-        finally:
-            # Step 9: Cleanup
-            if os.path.exists(local_xml_file):
-                os.remove(local_xml_file)
-
-    # --- End of new methods ---
+    # --- End of Auto-Type Toggles ---
 
     def remove_emojis_from_file(self):
         # --- MODIFIED to use the file path from the FIRST pair ---
         if not self.share_pairs:
-            self.status_label.configure(text="⚠️ Please add a Link/Caption Pair first.", text_color=self.COLOR_WARNING)
+            self._update_status_if_enabled(text="⚠️ Please add a Link/Caption Pair first.", color=self.COLOR_WARNING)
             return
 
         file_path = self.share_pairs[0]['file_entry'].get()
         if not file_path:
-            self.status_label.configure(text="⚠️ Please select a text file for the first pair.",
-                                        text_color=self.COLOR_WARNING)
+            self._update_status_if_enabled(text="⚠️ Please select a text file for the first pair.",
+                                           color=self.COLOR_WARNING)
             return
 
         try:
@@ -1484,13 +1852,13 @@ class AdbControllerApp(ctk.CTk):
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(cleaned_content)
 
-            self.status_label.configure(text=f"✅ EMOJIS REMOVED from file: {os.path.basename(file_path)}.",
-                                        text_color=self.COLOR_SUCCESS)
+            self._update_status_if_enabled(text=f"✅ EMOJIS REMOVED from file: {os.path.basename(file_path)}.",
+                                           color=self.COLOR_SUCCESS)
 
         except FileNotFoundError:
-            self.status_label.configure(text="❌ ERROR: File not found.", text_color=self.COLOR_DANGER)
+            self._update_status_if_enabled(text="❌ ERROR: File not found.", color=self.COLOR_DANGER)
         except Exception as e:
-            self.status_label.configure(text=f"❌ ERROR: An error occurred: {e}", text_color=self.COLOR_DANGER)
+            self._update_status_if_enabled(text=f"❌ ERROR: An error occurred: {e}", color=self.COLOR_DANGER)
 
     def detect_devices(self):
         self.stop_capture()
@@ -1507,7 +1875,7 @@ class AdbControllerApp(ctk.CTk):
         self.press_time = {}
         self.selected_device_serial = None
         self.devices = []
-        self.status_label.configure(text="[SYS] Detecting devices...", text_color=self.COLOR_ACCENT)
+        self._update_status_if_enabled(text="[SYS] Detecting devices...", color=self.COLOR_ACCENT)
 
         try:
             result = subprocess.run(['adb', 'devices'], capture_output=True, text=True, check=True, timeout=10)
@@ -1515,7 +1883,7 @@ class AdbControllerApp(ctk.CTk):
             self.devices = [line.split('\t')[0] for line in devices_output if line.strip() and 'device' in line]
         except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
             messagebox.showerror("Error", "ADB is not installed, not in your system PATH, or timed out.")
-            self.status_label.configure(text="❌ ERROR: ADB not found or timed out.", text_color=self.COLOR_DANGER)
+            self._update_status_if_enabled(text="❌ ERROR: ADB not found or timed out.", color=self.COLOR_DANGER)
             self.device_count_label.configure(text="DEVICES: 0")
             # Configure dropdown for no devices
             self.device_option_menu.configure(values=["No devices found"], state="disabled")
@@ -1530,12 +1898,12 @@ class AdbControllerApp(ctk.CTk):
                                             text="NO DEVICES FOUND.\nEnsure USB debugging is enabled.",
                                             font=self.FONT_HEADING, text_color=self.COLOR_TEXT_SECONDARY)
             no_devices_label.pack(expand=True)
-            self.status_label.configure(text="⚠️ No devices detected.", text_color=self.COLOR_WARNING)
+            self._update_status_if_enabled(text="⚠️ No devices detected.", color=self.COLOR_WARNING)
             # Configure dropdown for no devices
             self.device_option_menu.configure(values=["No devices found"], state="disabled")
             self.device_selector_var.set("No devices found")
         else:
-            self.status_label.configure(text=f"✅ {len(self.devices)} devices connected.", text_color=self.COLOR_SUCCESS)
+            self._update_status_if_enabled(text=f"✅ {len(self.devices)} devices connected.", color=self.COLOR_SUCCESS)
             # Configure dropdown with found devices
             self.device_option_menu.configure(values=self.devices, state="normal")
             self.device_selector_var.set(self.devices[0])
@@ -1856,33 +2224,33 @@ class AdbControllerApp(ctk.CTk):
     def send_adb_tap(self, event, serial):
         scaled_x, scaled_y = self._get_scaled_coords(event.x, event.y, serial)
         if scaled_x is None:
-            self.status_label.configure(text=f"⚠️ Tap ignored (outside screen area).", text_color=self.COLOR_WARNING)
+            self._update_status_if_enabled(text=f"⚠️ Tap ignored (outside screen area).", color=self.COLOR_WARNING)
             return
 
         command = ['shell', 'input', 'tap', str(scaled_x), str(scaled_y)]
         for device_serial in self.devices:
             self.executor.submit(run_adb_command, command, device_serial)
-        self.status_label.configure(text=f"✅ TAP command sent.", text_color=self.COLOR_SUCCESS)
+        self._update_status_if_enabled(text=f"✅ TAP command sent.", color=self.COLOR_SUCCESS)
 
     def send_adb_long_press(self, event, serial):
         scaled_x, scaled_y = self._get_scaled_coords(event.x, event.y, serial)
         if scaled_x is None:
-            self.status_label.configure(text=f"⚠️ Long press ignored (outside screen area).",
-                                        text_color=self.COLOR_WARNING)
+            self._update_status_if_enabled(text=f"⚠️ Long press ignored (outside screen area).",
+                                           color=self.COLOR_WARNING)
             return
 
         # Long press is implemented as a swipe from (x, y) to (x, y) over 1000ms
         command = ['shell', 'input', 'swipe', str(scaled_x), str(scaled_y), str(scaled_x), str(scaled_y), '1000']
         for device_serial in self.devices:
             self.executor.submit(run_adb_command, command, device_serial)
-        self.status_label.configure(text=f"✅ LONG PRESS command sent.", text_color=self.COLOR_SUCCESS)
+        self._update_status_if_enabled(text=f"✅ LONG PRESS command sent.", color=self.COLOR_SUCCESS)
 
     def send_adb_swipe_command(self, start_x, start_y, end_x, end_y, serial):
         scaled_start_x, scaled_start_y = self._get_scaled_coords(start_x, start_y, serial)
         scaled_end_x, scaled_end_y = self._get_scaled_coords(end_x, end_y, serial)
 
         if scaled_start_x is None or scaled_end_x is None:
-            self.status_label.configure(text=f"⚠️ Swipe ignored (outside screen area).", text_color=self.COLOR_WARNING)
+            self._update_status_if_enabled(text=f"⚠️ Swipe ignored (outside screen area).", color=self.COLOR_WARNING)
             return
 
         # Swipe duration set to 300ms
@@ -1892,7 +2260,7 @@ class AdbControllerApp(ctk.CTk):
 
         for device_serial in self.devices:
             self.executor.submit(run_adb_command, command, device_serial)
-        self.status_label.configure(text=f"✅ SWIPE command sent.", text_color=self.COLOR_SUCCESS)
+        self._update_status_if_enabled(text=f"✅ SWIPE command sent.", color=self.COLOR_SUCCESS)
 
     def send_adb_swipe(self, serial, direction):
         # This method handles the pre-defined scroll up/down buttons
@@ -1913,11 +2281,11 @@ class AdbControllerApp(ctk.CTk):
                        str(start_x), str(start_y), str(end_x), str(end_y), '300']
             for device_serial in self.devices:
                 self.executor.submit(run_adb_command, command, device_serial)
-            self.status_label.configure(text=f"✅ {direction.upper()} SCROLL command sent.",
-                                        text_color=self.COLOR_SUCCESS)
+            self._update_status_if_enabled(text=f"✅ {direction.upper()} SCROLL command sent.",
+                                           color=self.COLOR_SUCCESS)
         except Exception as e:
-            self.status_label.configure(text=f"❌ ERROR: Failed to send scroll command: {e}",
-                                        text_color=self.COLOR_DANGER)
+            self._update_status_if_enabled(text=f"❌ ERROR: Failed to send scroll command: {e}",
+                                           color=self.COLOR_DANGER)
 
     def send_adb_keyevent(self, keycode):
         command = ['shell', 'input', 'keyevent', str(keycode)]
@@ -1926,16 +2294,16 @@ class AdbControllerApp(ctk.CTk):
 
         key_name = {3: "HOME", 4: "BACK", 187: "RECENTS", 24: "VOL UP", 25: "VOL DOWN", 26: "POWER/SCREEN OFF"}.get(
             keycode, "KEY EVENT")
-        self.status_label.configure(text=f"✅ {key_name} command sent.", text_color=self.COLOR_SUCCESS)
+        self._update_status_if_enabled(text=f"✅ {key_name} command sent.", color=self.COLOR_SUCCESS)
 
     def open_fb_lite_deeplink(self):
         # ... (Implementation remains the same, adjusted status text colors)
         post_url = self.fb_url_entry.get()
         if not post_url or not self.devices:
-            self.status_label.configure(text="⚠️ Check URL and devices.", text_color=self.COLOR_WARNING)
+            self._update_status_if_enabled(text="⚠️ Check URL and devices.", color=self.COLOR_WARNING)
             return
 
-        self.status_label.configure(text=f"[CMD] Opening FB post URL...", text_color=self.COLOR_ACCENT)
+        self._update_status_if_enabled(text=f"[CMD] Opening FB post URL...", color=self.COLOR_ACCENT)
 
         command = [
             'shell', 'am', 'start',
@@ -1945,49 +2313,49 @@ class AdbControllerApp(ctk.CTk):
         ]
         for device_serial in self.devices:
             self.executor.submit(run_adb_command, command, device_serial)
-        self.status_label.configure(text="✅ Visited FB post on all devices.", text_color=self.COLOR_SUCCESS)
+        self._update_status_if_enabled(text="✅ Visited FB post on all devices.", color=self.COLOR_SUCCESS)
 
     def share_fb_lite_deeplink(self):
         # --- REMOVED this method, as the single share button is gone, replaced by auto-type logic ---
         # The share command logic is now inside _threaded_find_click_type_LOOP's failure case.
-        self.status_label.configure(text="⚠️ Use 'Start Auto-Type' to share links from pairs list.",
-                                    text_color=self.COLOR_WARNING)
+        self._update_status_if_enabled(text="⚠️ Use 'Start Auto-Type' to share links from pairs list.",
+                                       color=self.COLOR_WARNING)
 
     def launch_fb_lite(self):
         # ... (Implementation remains the same, adjusted status text colors)
         if not self.devices:
-            self.status_label.configure(text="⚠️ No devices detected.", text_color=self.COLOR_WARNING)
+            self._update_status_if_enabled(text="⚠️ No devices detected.", color=self.COLOR_WARNING)
             return
 
-        self.status_label.configure(text=f"[CMD] Launching Facebook Lite...", text_color=self.COLOR_ACCENT)
+        self._update_status_if_enabled(text=f"[CMD] Launching Facebook Lite...", color=self.COLOR_ACCENT)
 
         command = ['shell', 'am', 'start', '-n', 'com.facebook.lite/com.facebook.lite.MainActivity']
         for device_serial in self.devices:
             self.executor.submit(run_adb_command, command, device_serial)
-        self.status_label.configure(text="✅ Launched Facebook Lite on all devices.", text_color=self.COLOR_SUCCESS)
+        self._update_status_if_enabled(text="✅ Launched Facebook Lite on all devices.", color=self.COLOR_SUCCESS)
 
     def force_stop_fb_lite(self):
         # ... (Implementation remains the same, adjusted status text colors)
         if not self.devices:
-            self.status_label.configure(text="⚠️ No devices detected.", text_color=self.COLOR_WARNING)
+            self._update_status_if_enabled(text="⚠️ No devices detected.", color=self.COLOR_WARNING)
             return
 
-        self.status_label.configure(text=f"[CMD] Force stopping Facebook Lite...", text_color=self.COLOR_DANGER)
+        self._update_status_if_enabled(text=f"[CMD] Force stopping Facebook Lite...", color=self.COLOR_DANGER)
 
         command = ['shell', 'am', 'force-stop', 'com.facebook.lite']
         for device_serial in self.devices:
             self.executor.submit(run_adb_command, command, device_serial)
-        self.status_label.configure(text="✅ Force stopped Facebook Lite on all devices.", text_color=self.COLOR_SUCCESS)
+        self._update_status_if_enabled(text="✅ Force stopped Facebook Lite on all devices.", color=self.COLOR_SUCCESS)
 
     def share_image_to_fb_lite(self):
         # ... (Implementation remains the same, adjusted status text colors)
         file_name = self.image_file_name_entry.get()
         if not file_name or not self.devices:
-            self.status_label.configure(text="⚠️ Check image filename and devices.", text_color=self.COLOR_WARNING)
+            self._update_status_if_enabled(text="⚠️ Check image filename and devices.", color=self.COLOR_WARNING)
             return
 
-        self.status_label.configure(text=f"[CMD] Sending sharing intent for '{file_name}'...",
-                                    text_color=self.COLOR_ACCENT)
+        self._update_status_if_enabled(text=f"[CMD] Sending sharing intent for '{file_name}'...",
+                                       color=self.COLOR_ACCENT)
 
         device_path = f'/sdcard/Download/{file_name}'
         command = [
@@ -1999,11 +2367,11 @@ class AdbControllerApp(ctk.CTk):
         ]
         for device_serial in self.devices:
             self.executor.submit(run_adb_command, command, device_serial)
-        self.status_label.configure(text="✅ Image sharing command sent to all devices.", text_color=self.COLOR_SUCCESS)
+        self._update_status_if_enabled(text="✅ Image sharing command sent to all devices.", color=self.COLOR_SUCCESS)
 
     def stop_all_commands(self):
         # ... (Implementation remains the same, adjusted status text colors and max workers)
-        self.status_label.configure(text="⚠️ TERMINATING ALL ACTIVE COMMANDS...", text_color=self.COLOR_WARNING)
+        self._update_status_if_enabled(text="⚠️ TERMINATING ALL ACTIVE COMMANDS...", color=self.COLOR_WARNING)
         is_stop_requested.set()
 
         # --- NEW: Also clear the auto-type flag ---
@@ -2016,7 +2384,7 @@ class AdbControllerApp(ctk.CTk):
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=multiprocessing.cpu_count() * 4)
         is_stop_requested.clear()
 
-        self.status_label.configure(text="✅ ALL OPERATIONS TERMINATED. Ready.", text_color=self.COLOR_SUCCESS)
+        self._update_status_if_enabled(text="✅ ALL OPERATIONS TERMINATED. Ready.", color=self.COLOR_SUCCESS)
 
 
 if __name__ == '__main__':
