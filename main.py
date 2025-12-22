@@ -23,7 +23,7 @@ import uuid
 import xml.etree.ElementTree as ET
 
 # --- App Version and Update URL ---
-__version__ = "10"  # Updated version number
+__version__ = "11"  # Updated version number
 UPDATE_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/main.py"
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/version.txt"
 
@@ -1339,6 +1339,7 @@ class AdbControllerApp(ctk.CTk):
     def _run_find_click_type_on_device(self, serial, text_to_send):
         """
         The core logic that runs on each device to find, click, and type.
+        MODIFIED: Uses fallback coordinates (355, 475) if EditText is not found.
         Returns (bool success, str message)
         """
         local_xml_file = f"ui_dump_{serial}_{uuid.uuid4()}.xml"
@@ -1349,7 +1350,6 @@ class AdbControllerApp(ctk.CTk):
                 dump_cmd = ['shell', 'uiautomator', 'dump', '/data/local/tmp/ui.xml']
                 success, out = run_adb_command(dump_cmd, serial)
                 if not success:
-                    # print(f"[{serial}] Failed to dump UI.")
                     return False, "Failed to dump UI"
             else:
                 return False, "Stop requested"
@@ -1359,74 +1359,70 @@ class AdbControllerApp(ctk.CTk):
                 pull_cmd = ['pull', '/data/local/tmp/ui.xml', local_xml_file]
                 success, out = run_adb_command(pull_cmd, serial)
                 if not success:
-                    # print(f"[{serial}] Failed to pull UI XML.")
                     return False, "Failed to pull UI XML"
             else:
                 return False, "Stop requested"
 
+            # --- MODIFIED LOGIC START: FIND OR FALLBACK ---
+            tap_x = 0
+            tap_y = 0
+            found_dynamic = False
+
             if self.is_auto_typing.is_set() and not is_stop_requested.is_set():
                 # Step 3: Parse XML
-                if not os.path.exists(local_xml_file):
-                    # print(f"[{serial}] XML file not found locally.")
-                    return False, "XML file not found"
+                if os.path.exists(local_xml_file):
+                    try:
+                        tree = ET.parse(local_xml_file)
+                        root = tree.getroot()
 
-                tree = ET.parse(local_xml_file)
-                root = tree.getroot()
+                        # Step 4: Find EditText
+                        time.sleep(6)  # Wait for UI to settle
+                        edit_text_node = root.find('.//node[@class="android.widget.EditText"]')
 
-                # Step 4: Find EditText
-                # Find the first node with class="android.widget.EditText"
-                time.sleep(6)
-                edit_text_node = root.find('.//node[@class="android.widget.EditText"]')
+                        if edit_text_node is not None:
+                            # Try to get bounds from XML
+                            bounds_str = edit_text_node.get('bounds')
+                            if bounds_str:
+                                coords = re.findall(r'\d+', bounds_str)
+                                if len(coords) >= 4:
+                                    x1, y1, x2, y2 = map(int, coords[:4])
+                                    # Calculate Center
+                                    tap_x = (x1 + x2) // 2
+                                    tap_y = (y1 + y2) // 2
+                                    found_dynamic = True
+                    except ET.ParseError:
+                        pass  # Ignore parse errors and use fallback
 
-                if edit_text_node is None:
-                    # print(f"[{serial}] No EditText found.")
-                    return False, "No EditText found (Caption box not ready/visible)"
-
-                # Step 5: Get Bounds
-                bounds_str = edit_text_node.get('bounds')  # e.g., "[100,200][300,400]"
-                if not bounds_str:
-                    # print(f"[{serial}] EditText found but has no bounds.")
-                    return False, "EditText found but has no bounds"
-
-                coords = re.findall(r'\d+', bounds_str)
-                if len(coords) < 4:
-                    # print(f"[{serial}] Invalid bounds string.")
-                    return False, "Invalid bounds string"
-
-                x1, y1, x2, y2 = map(int, coords[:4])
-
-                # Step 6: Calculate Center
-                tap_x = (x1 + x2) // 2
-                tap_y = (y1 + y2) // 2
+                # FALLBACK: If EditText not found (or XML error), use specific bounds [42,293][668,657]
+                if not found_dynamic:
+                    # Center X: (42 + 668) / 2 = 355
+                    # Center Y: (293 + 657) / 2 = 475
+                    tap_x = 355
+                    tap_y = 475
+                    # print(f"[{serial}] Using FALLBACK coordinates: ({tap_x}, {tap_y})")
 
             else:
                 return False, "Stop requested"
+            # --- MODIFIED LOGIC END ---
 
             if self.is_auto_typing.is_set() and not is_stop_requested.is_set():
-                # Step 7: Click
+                # Step 7: Click (Uses either the dynamic coordinates OR the fallback)
                 tap_cmd = ['shell', 'input', 'tap', str(tap_x), str(tap_y)]
                 success, out = run_adb_command(tap_cmd, serial)
                 if not success:
-                    # print(f"[{serial}] Failed to tap.")
                     return False, "Failed to tap"
 
-                # Mas matagal na delay para masigurong lalabas ang keyboard at handa na ang device.
-                time.sleep(3)  # <-- BINAGO ang halaga para sa mas matibay na operasyon.
+                # Wait for keyboard to appear
+                time.sleep(3)
 
             if self.is_auto_typing.is_set() and not is_stop_requested.is_set():
-                # Step 8: Type (This uses the FAST TYPING version of run_text_command)
-                # This will now also click the "Post" button because run_text_command is modified
+                # Step 8: Type
                 run_text_command(text_to_send, serial)
-                # print(f"[{serial}] Click and type successful.")
                 return True, "Success"
             else:
                 return False, "Stop requested"
 
-        except ET.ParseError:
-            # print(f"[{serial}] Failed to parse XML.")
-            return False, "Failed to parse XML"
         except Exception as e:
-            # print(f"[{serial}] Error in find/click/type: {e}")
             return False, str(e)
         finally:
             # Step 9: Cleanup
