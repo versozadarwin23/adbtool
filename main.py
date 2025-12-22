@@ -23,7 +23,7 @@ import uuid
 import xml.etree.ElementTree as ET
 
 # --- App Version and Update URL ---
-__version__ = "11"  # Updated version number
+__version__ = "12"  # Updated version number
 UPDATE_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/main.py"
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/version.txt"
 
@@ -182,7 +182,11 @@ class AdbControllerApp(ctk.CTk):
         # --- Configuration ---
         self.title(f"ADB Commander By Dars: V{__version__}")
         self.geometry("1400x900")
-        self.state('zoomed')
+
+        # --- FIXED: Gamit ang .after para siguradong loaded na bago mag-maximize ---
+        # Ang '0' ay ibig sabihin gagawin ito agad pagkatapos mag-initialize ng window
+        self.after(0, lambda: self.state('zoomed'))
+
         ctk.set_appearance_mode("Dark")
         ctk.set_default_color_theme("blue")
 
