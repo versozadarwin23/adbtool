@@ -23,7 +23,7 @@ import uuid
 import xml.etree.ElementTree as ET
 
 # --- App Version and Update URL ---
-__version__ = "12"  # Updated version number
+__version__ = "13"  # Updated version number
 UPDATE_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/main.py"
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/version.txt"
 
@@ -236,7 +236,7 @@ class AdbControllerApp(ctk.CTk):
         self.share_pair_frame = None
         self.is_auto_typing = threading.Event()
         # --- NEW STATE VARIABLE for logging ---
-        self.is_logging_enabled = tk.BooleanVar(value=True)  # <-- INILIPAT DITO
+        self.is_logging_enabled = tk.BooleanVar(value=False)  # <-- INILIPAT DITO
         # --- NEW STATE VARIABLE for looping ---
         self.account_dir_path = ""  # Track the selected account directory
         self.device_account_cycle = {}  # Tracks accounts for loop cycling
