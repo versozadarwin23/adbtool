@@ -23,7 +23,7 @@ import uuid
 import xml.etree.ElementTree as ET
 
 # --- App Version and Update URL ---
-__version__ = "14"  # Updated version number for the fix
+__version__ = "15"  # Updated version number for the fix
 UPDATE_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/main.py"
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/version.txt"
 
@@ -75,7 +75,7 @@ def run_adb_command(command, serial):
 
 def run_text_command(text_to_send, serial):
     """
-    Sends the entire text string in one go using ADB 'input text'.
+    Sends text AND taps the post button. Used when caption IS provided.
     """
     if is_stop_requested.is_set():
         return
@@ -111,6 +111,29 @@ def run_text_command(text_to_send, serial):
                        timeout=60)
 
     except Exception as e:
+        pass
+
+
+def run_post_only(serial):
+    """
+    [NEW] Executes ONLY the tap command for the Post button (638, 83).
+    Used when NO caption is provided (Unchecked).
+    """
+    if is_stop_requested.is_set():
+        return
+
+    try:
+        # Tap command for Post button (Coordinates: 638, 83)
+        tap_x = 638
+        tap_y = 83
+
+        tap_cmd = ['shell', 'input', 'tap', str(tap_x), str(tap_y)]
+        subprocess.run(['adb', '-s', serial] + tap_cmd,
+                       stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL,
+                       check=True,
+                       timeout=60)
+    except Exception:
         pass
 
 
@@ -445,7 +468,7 @@ class AdbControllerApp(ctk.CTk):
             title = "New ADB Commander Update!"
             message = (
                 f"An improved version ({latest_version}) is now available!\n\n"
-                "New With Caption Checkbox This update contains the latest upgrades and performance improvements for faster and more reliable control of your devices.\n\n"
+                "New with Caption Checkbox This update contains the latest upgrades and performance improvements for faster and more reliable control of your devices.\n\n"
                 "The app will close and restart to complete the update. Would you like to update now?"
             )
             response = messagebox.askyesno(title, message)
@@ -841,11 +864,11 @@ class AdbControllerApp(ctk.CTk):
             self._update_status_if_enabled(
                 text=f"❌ SWITCH ACCOUNT sequence FAILED on {fail_count} device(s).", color=self.COLOR_DANGER)
 
-    # --- MODIFIED: Execute Link Posting Phase (Allow No-Caption success) ---
+    # --- MODIFIED: Execute Link Posting Phase (Allow No-Caption success AND Tap Post) ---
     def _execute_link_posting_phase(self, devices_to_post, valid_pairs, is_initial_phase=False):
         """
         Runs link sharing.
-        MODIFIED: Now considers the cycle successful even if only "Share" occurred (if no caption was required).
+        MODIFIED: If caption is unchecked, it runs 'run_post_only' which taps the post button.
         """
         current_cycle_success = False
 
@@ -899,7 +922,7 @@ class AdbControllerApp(ctk.CTk):
             if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
                 return current_cycle_success
 
-            # 2. Type Caption (OPTIONAL)
+            # 2. Type Caption (OPTIONAL) OR Just Post
             if has_caption:
                 typing_futures = []
                 for serial in devices_to_post:
@@ -915,12 +938,22 @@ class AdbControllerApp(ctk.CTk):
                 if any(f.result()[0] for f in typing_futures if f.exception() is None):
                     current_cycle_success = True
             else:
-                # NEW LOGIC: If no caption was needed, the Share action itself counts as success!
-                # We assume the share intent worked if no errors occurred in the future list (basic check)
-                # For robustness, we'll mark it true because we performed the action requested.
+                # NEW LOGIC: Just Tap Post Button (638, 83)
+                self._update_status_if_enabled(
+                    text=f"[POST] Pair {pair_index}: No caption needed. Tapping POST button...",
+                    color=self.COLOR_ACCENT)
+
+                post_futures = []
+                for serial in devices_to_post:
+                    if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
+                        break
+                    post_futures.append(self.executor.submit(run_post_only, serial))
+
+                concurrent.futures.wait(post_futures)
+
                 current_cycle_success = True
                 self._update_status_if_enabled(
-                    text=f"✅ Pair {pair_index}: Shared successfully (No Caption required).",
+                    text=f"✅ Pair {pair_index}: Posted successfully (Shared + Tapped Post).",
                     color=self.COLOR_SUCCESS)
 
             # COOLDOWN
