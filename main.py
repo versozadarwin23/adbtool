@@ -23,7 +23,7 @@ import uuid
 import xml.etree.ElementTree as ET
 
 # --- App Version and Update URL ---
-__version__ = "15"  # Updated version number for the fix
+__version__ = "16"  # Updated version number for Timing Controls
 UPDATE_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/main.py"
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/version.txt"
 
@@ -73,9 +73,9 @@ def run_adb_command(command, serial):
         return False, str(e)
 
 
-def run_text_command(text_to_send, serial):
+def run_text_command(text_to_send, serial, typing_delay=2.0, post_delay=3.0):
     """
-    Sends text AND taps the post button. Used when caption IS provided.
+    Sends text AND taps the post button with configurable delays.
     """
     if is_stop_requested.is_set():
         return
@@ -86,20 +86,24 @@ def run_text_command(text_to_send, serial):
     adb_text = text_to_send.replace(' ', '%s')
 
     try:
+        # 1. Input Text
         command_args = ['shell', 'input', 'text', adb_text]
-
         subprocess.run(['adb', '-s', serial] + command_args,
                        stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL,
                        check=True,
                        timeout=5)
 
-        time.sleep(1.0)
+        # 2. Wait after typing (Typing Delay)
+        time.sleep(float(typing_delay))
 
         if is_stop_requested.is_set():
             return
 
-        # Tap command for Post button (Coordinates: 638, 83)
+        # 3. Wait before clicking Post (Post Delay)
+        time.sleep(float(post_delay))
+
+        # 4. Tap command for Post button (Coordinates: 638, 83)
         tap_x = 638
         tap_y = 83
 
@@ -114,15 +118,17 @@ def run_text_command(text_to_send, serial):
         pass
 
 
-def run_post_only(serial):
+def run_post_only(serial, post_delay=3.0):
     """
-    [NEW] Executes ONLY the tap command for the Post button (638, 83).
-    Used when NO caption is provided (Unchecked).
+    Executes ONLY the tap command for the Post button with delay.
     """
     if is_stop_requested.is_set():
         return
 
     try:
+        # Wait before clicking Post (Post Delay)
+        time.sleep(float(post_delay))
+
         # Tap command for Post button (Coordinates: 638, 83)
         tap_x = 638
         tap_y = 83
@@ -183,7 +189,8 @@ class AdbControllerApp(ctk.CTk):
         self.title(f"ADB Commander By Dars: V{__version__}")
         self.geometry("1400x900")
 
-        self.after(0, lambda: self.state('zoomed'))
+        # --- FIX: Platform-safe maximize ---
+        self.after(100, self.maximize_window)
 
         ctk.set_appearance_mode("Dark")
         ctk.set_default_color_theme("blue")
@@ -355,6 +362,22 @@ class AdbControllerApp(ctk.CTk):
         self.check_for_updates()
         self.start_periodic_update_check()
 
+    def maximize_window(self):
+        """Safely maximize window based on OS"""
+        try:
+            if sys.platform.startswith("win"):
+                self.state('zoomed')
+            elif sys.platform.startswith("linux"):
+                self.attributes('-zoomed', True)
+            else:
+                self.attributes('-fullscreen', True)
+        except Exception:
+            # Fallback if maximization attributes are rejected
+            try:
+                self.geometry(f"{self.winfo_screenwidth()}x{self.winfo_screenheight()}+0+0")
+            except Exception:
+                pass
+
     def _update_status_if_enabled(self, text, color):
         if self.is_logging_enabled.get():
             self.after(0, lambda: self.status_label.configure(text=text, text_color=color))
@@ -468,7 +491,7 @@ class AdbControllerApp(ctk.CTk):
             title = "New ADB Commander Update!"
             message = (
                 f"An improved version ({latest_version}) is now available!\n\n"
-                "New with Caption Checkbox This update contains the latest upgrades and performance improvements for faster and more reliable control of your devices.\n\n"
+                "Timing Control This update contains the latest upgrades and performance improvements for faster and more reliable control of your devices.\n\n"
                 "The app will close and restart to complete the update. Would you like to update now?"
             )
             response = messagebox.askyesno(title, message)
@@ -489,7 +512,8 @@ class AdbControllerApp(ctk.CTk):
     def _configure_tab_layouts(self):
         # --- Facebook Automation Tab ---
         fb_tab_container = self.tab_view.tab("Facebook Automation")
-        fb_frame = ctk.CTkScrollableFrame(fb_tab_container, fg_color="transparent")
+        # FIX: Removed fg_color="transparent" to avoid ValueError on some systems
+        fb_frame = ctk.CTkScrollableFrame(fb_tab_container, fg_color=None)
         fb_frame.pack(fill="both", expand=True, padx=0, pady=0)
         fb_frame.columnconfigure(0, weight=1)
 
@@ -588,9 +612,33 @@ class AdbControllerApp(ctk.CTk):
 
         self.add_share_pair(is_initial=True)
 
+        # --- NEW: Timing Settings ---
+        self._create_section_header(fb_frame, "Timing Control", 9)
+        timing_frame = self._create_section_frame(fb_frame, 10)
+        timing_frame.columnconfigure(0, weight=1)
+        timing_frame.columnconfigure(1, weight=1)
+        timing_frame.columnconfigure(2, weight=1)
+        timing_frame.columnconfigure(3, weight=1)
+
+        # Label 1
+        ctk.CTkLabel(timing_frame, text="After Typing Delay (s):", font=self.FONT_BODY).grid(row=0, column=0,
+                                                                                             padx=(10, 5), pady=10)
+        # Input 1
+        self.typing_delay_entry = ctk.CTkEntry(timing_frame, placeholder_text="2.0", width=60, font=self.FONT_BODY)
+        self.typing_delay_entry.insert(0, "2.0")
+        self.typing_delay_entry.grid(row=0, column=1, padx=(0, 10), pady=10, sticky='w')
+
+        # Label 2
+        ctk.CTkLabel(timing_frame, text="Before Post Click Delay (s):", font=self.FONT_BODY).grid(row=0, column=2,
+                                                                                                  padx=(10, 5), pady=10)
+        # Input 2
+        self.post_delay_entry = ctk.CTkEntry(timing_frame, placeholder_text="5.0", width=60, font=self.FONT_BODY)
+        self.post_delay_entry.insert(0, "5.0")
+        self.post_delay_entry.grid(row=0, column=3, padx=(0, 10), pady=10, sticky='w')
+
         # Automation Actions
-        self._create_section_header(fb_frame, "Automation Actions", 9)
-        action_frame = self._create_section_frame(fb_frame, 10)
+        self._create_section_header(fb_frame, "Automation Actions", 11)
+        action_frame = self._create_section_frame(fb_frame, 12)
         action_frame.columnconfigure(0, weight=1)
         action_frame.columnconfigure(1, weight=1)
 
@@ -613,11 +661,12 @@ class AdbControllerApp(ctk.CTk):
                                                     fg_color=self.COLOR_ACCENT, hover_color=self.COLOR_ACCENT_HOVER,
                                                     height=50, font=self.FONT_SUBHEADING,
                                                     text_color=self.COLOR_BACKGROUND, corner_radius=8)
-        self.find_click_type_button.grid(row=11, column=0, sticky='ew', padx=15, pady=(15, 15))
+        self.find_click_type_button.grid(row=13, column=0, sticky='ew', padx=15, pady=(15, 15))
 
         # --- Utilities Tab ---
         utility_tab_container = self.tab_view.tab("Utilities")
-        utility_frame = ctk.CTkScrollableFrame(utility_tab_container, fg_color="transparent")
+        # FIX: Removed fg_color="transparent"
+        utility_frame = ctk.CTkScrollableFrame(utility_tab_container, fg_color=None)
         utility_frame.pack(fill="both", expand=True, padx=0, pady=0)
         utility_frame.columnconfigure(0, weight=1)
 
@@ -872,6 +921,17 @@ class AdbControllerApp(ctk.CTk):
         """
         current_cycle_success = False
 
+        # --- GET TIMING SETTINGS ---
+        try:
+            typing_delay = float(self.typing_delay_entry.get())
+        except ValueError:
+            typing_delay = 2.0  # Default if invalid
+
+        try:
+            post_delay = float(self.post_delay_entry.get())
+        except ValueError:
+            post_delay = 5.0  # Default if invalid
+
         for index, selected_pair in enumerate(valid_pairs):
             if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
                 return current_cycle_success
@@ -929,8 +989,9 @@ class AdbControllerApp(ctk.CTk):
                     if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
                         break
                     random_text = random.choice(clean_lines)
+                    # PASS DELAYS HERE
                     typing_futures.append(
-                        self.executor.submit(self._run_task_with_retry, serial, random_text, pair_index))
+                        self.executor.submit(self._run_task_with_retry, serial, random_text, pair_index, typing_delay, post_delay))
 
                 concurrent.futures.wait(typing_futures)
 
@@ -947,7 +1008,8 @@ class AdbControllerApp(ctk.CTk):
                 for serial in devices_to_post:
                     if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
                         break
-                    post_futures.append(self.executor.submit(run_post_only, serial))
+                    # PASS POST DELAY HERE
+                    post_futures.append(self.executor.submit(run_post_only, serial, post_delay))
 
                 concurrent.futures.wait(post_futures)
 
@@ -1065,12 +1127,12 @@ class AdbControllerApp(ctk.CTk):
         finally:
             self.after(0, self.stop_auto_type_loop)
 
-    def _run_task_with_retry(self, serial, text_to_send, pair_index, max_retries=5):
+    def _run_task_with_retry(self, serial, text_to_send, pair_index, typing_delay=2.0, post_delay=5.0, max_retries=5):
         for attempt in range(max_retries):
             if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
                 return False, "Stop requested"
 
-            success, message = self._run_find_click_type_on_device(serial, text_to_send)
+            success, message = self._run_find_click_type_on_device(serial, text_to_send, typing_delay, post_delay)
 
             if success:
                 self._update_status_if_enabled(
@@ -1092,7 +1154,7 @@ class AdbControllerApp(ctk.CTk):
 
         return False, "Max retries reached"
 
-    def _run_find_click_type_on_device(self, serial, text_to_send):
+    def _run_find_click_type_on_device(self, serial, text_to_send, typing_delay, post_delay):
         local_xml_file = f"ui_dump_{serial}_{uuid.uuid4()}.xml"
 
         try:
@@ -1150,7 +1212,8 @@ class AdbControllerApp(ctk.CTk):
                 time.sleep(3)
 
             if self.is_auto_typing.is_set() and not is_stop_requested.is_set():
-                run_text_command(text_to_send, serial)
+                # PASS DELAYS DOWN TO RUN_TEXT_COMMAND
+                run_text_command(text_to_send, serial, typing_delay, post_delay)
                 return True, "Success"
             else:
                 return False, "Stop requested"
@@ -1286,7 +1349,8 @@ class AdbControllerApp(ctk.CTk):
                 file_path_entry.configure(state="normal", fg_color=["#F9F9FA", "#343638"])  # Standard colors
                 browse_button.configure(state="normal", fg_color=self.COLOR_BORDER)
             else:
-                file_path_entry.configure(state="disabled", fg_color="transparent")
+                # FIX: CTkEntry cannot be "transparent". Use self.COLOR_FRAME (background color) instead.
+                file_path_entry.configure(state="disabled", fg_color=self.COLOR_FRAME)
                 browse_button.configure(state="disabled", fg_color="transparent")
 
         # Checkbox
