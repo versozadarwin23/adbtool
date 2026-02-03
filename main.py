@@ -23,7 +23,7 @@ import uuid
 import xml.etree.ElementTree as ET
 
 # --- App Version and Update URL ---
-__version__ = "17"  # Updated version number for Timing Controls
+__version__ = "18"  # Updated version number for Timing Controls
 UPDATE_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/main.py"
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/version.txt"
 
@@ -860,12 +860,12 @@ class AdbControllerApp(ctk.CTk):
                     color=self.COLOR_WARNING)
 
                 # Scroll down 3 times using the coordinates you provided
-                for i in range(3):
+                for i in range(5):
                     if is_stop_requested.is_set():
                         return False, "Stop requested"
 
-                    # Scroll down from x331 y1021 to x334 y822
-                    scroll_cmd = ['shell', 'input', 'swipe', '331', '1021', '334', '822', '500']
+                    # Scroll down from 369 956 to 364 759
+                    scroll_cmd = ['shell', 'input', 'swipe', '369', '956', '364', '759', '1000']
                     run_adb_command(scroll_cmd, serial)
                     time.sleep(1)  # Small delay between scrolls
 
