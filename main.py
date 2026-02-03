@@ -23,7 +23,7 @@ import uuid
 import xml.etree.ElementTree as ET
 
 # --- App Version and Update URL ---
-__version__ = "16"  # Updated version number for Timing Controls
+__version__ = "17"  # Updated version number for Timing Controls
 UPDATE_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/main.py"
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/version.txt"
 
@@ -491,7 +491,7 @@ class AdbControllerApp(ctk.CTk):
             title = "New ADB Commander Update!"
             message = (
                 f"An improved version ({latest_version}) is now available!\n\n"
-                "Timing Control This update contains the latest upgrades and performance improvements for faster and more reliable control of your devices.\n\n"
+                "New Scrolling This update contains the latest upgrades and performance improvements for faster and more reliable control of your devices.\n\n"
                 "The app will close and restart to complete the update. Would you like to update now?"
             )
             response = messagebox.askyesno(title, message)
@@ -836,6 +836,7 @@ class AdbControllerApp(ctk.CTk):
             return False, "Stop requested"
 
         try:
+            # Ito ang existing code para sa pag-switch ng account
             run_adb_command(['shell', 'input', 'tap', '658', '85'], serial)
             time.sleep(2)
 
@@ -849,13 +850,35 @@ class AdbControllerApp(ctk.CTk):
             run_adb_command(['shell', 'input', 'tap', '221', '720'], serial)
             time.sleep(5)
 
+            # Subukan mahanap ang account
             success, message = self._run_dynamic_tap_by_content_desc(serial, target_account_name)
+
+            # KUNG HINDI MAKITA ANG ACCOUNT, GAWIN ANG SCROLL DOWN 3 BESES
+            if not success:
+                self._update_status_if_enabled(
+                    text=f"[SWITCH] Account '{target_account_name}' not found. Scrolling down 3 times...",
+                    color=self.COLOR_WARNING)
+
+                # Scroll down 3 times using the coordinates you provided
+                for i in range(3):
+                    if is_stop_requested.is_set():
+                        return False, "Stop requested"
+
+                    # Scroll down from x331 y1021 to x334 y822
+                    scroll_cmd = ['shell', 'input', 'swipe', '331', '1021', '334', '822', '500']
+                    run_adb_command(scroll_cmd, serial)
+                    time.sleep(1)  # Small delay between scrolls
+
+                    # Subukan ulit mahanap ang account after bawat scroll
+                    success, message = self._run_dynamic_tap_by_content_desc(serial, target_account_name)
+                    if success:
+                        break
 
             if success:
                 time.sleep(5)
                 return True, f"Successfully switched to '{target_account_name}'"
             else:
-                return False, f"Failed to tap account '{target_account_name}'. Reason: {message}"
+                return False, f"Failed to tap account '{target_account_name}' after scrolling. Reason: {message}"
 
         except Exception as e:
             return False, f"Error during switch sequence on {serial}: {e}"
