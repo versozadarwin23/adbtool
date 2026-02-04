@@ -219,7 +219,7 @@ class AdbControllerApp(ctk.CTk):
         super().__init__()
 
         # --- Configuration ---
-        self.title(f"ADB Commander By Dars: V{__version__}")
+        self.title(f"ADB Commander By Dars: {__version__}")
         self.geometry("1400x900")
 
         # --- FIX: Platform-safe maximize ---
