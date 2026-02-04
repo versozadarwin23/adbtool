@@ -23,7 +23,7 @@ import uuid
 import xml.etree.ElementTree as ET
 
 # --- App Version and Update URL ---
-__version__ = "V2"  # Updated version number for increace logout scroll
+__version__ = "20"  # Updated version number for increace logout scroll
 UPDATE_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/main.py"
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/version.txt"
 
@@ -219,7 +219,7 @@ class AdbControllerApp(ctk.CTk):
         super().__init__()
 
         # --- Configuration ---
-        self.title(f"ADB Commander By Dars: {__version__}")
+        self.title(f"ADB Commander By Dars: V{__version__}")
         self.geometry("1400x900")
 
         # --- FIX: Platform-safe maximize ---
