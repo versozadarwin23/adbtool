@@ -23,7 +23,7 @@ import uuid
 import xml.etree.ElementTree as ET
 
 # --- App Version and Update URL ---
-__version__ = "18"  # Updated version number for Timing Controls
+__version__ = "19"  # Updated version number for increace logout scroll
 UPDATE_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/main.py"
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/version.txt"
 
@@ -491,7 +491,7 @@ class AdbControllerApp(ctk.CTk):
             title = "New ADB Commander Update!"
             message = (
                 f"An improved version ({latest_version}) is now available!\n\n"
-                "New Scrolling This update contains the latest upgrades and performance improvements for faster and more reliable control of your devices.\n\n"
+                "New increace logout scroll This update contains the latest upgrades and performance improvements for faster and more reliable control of your devices.\n\n"
                 "The app will close and restart to complete the update. Would you like to update now?"
             )
             response = messagebox.askyesno(title, message)
@@ -836,14 +836,21 @@ class AdbControllerApp(ctk.CTk):
             return False, "Stop requested"
 
         try:
-            # Ito ang existing code para sa pag-switch ng account
             run_adb_command(['shell', 'input', 'tap', '658', '85'], serial)
             time.sleep(2)
+        except:
+            pass
 
-            swipe_cmd = ['shell', 'input', 'swipe', '359', '1233', '372', '176', '500']
-            run_adb_command(swipe_cmd, serial)
-            time.sleep(2)
+        swipe_cmd = ['shell', 'input', 'swipe', '359', '1233', '372', '176', '500']
+        for x in range(3):
+            try:
+                run_adb_command(swipe_cmd, serial)
+                time.sleep(2)
+            except:
+                pass
 
+        try:
+            # Ito ang existing code para sa pag-switch ng account
             run_adb_command(['shell', 'input', 'tap', '172', '1231'], serial)
             time.sleep(3)
 
