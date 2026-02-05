@@ -23,7 +23,7 @@ import uuid
 import xml.etree.ElementTree as ET
 
 # --- App Version and Update URL ---
-__version__ = "21"  # Updated version number for increace logout scroll
+__version__ = "22"  # Updated version number for increace logout scroll
 UPDATE_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/main.py"
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/version.txt"
 
@@ -35,9 +35,10 @@ ACCOUNT_DIR = None
 CONFIG_FILE = "config.json"  # New: Configuration file name
 
 
-def run_adb_command(command, serial):
+def run_adb_command(command, serial, delay_after=0):
     """
     Executes a single ADB command for a specific device with a timeout, checking for a stop signal.
+    Added delay_after parameter for timing control.
     """
     if is_stop_requested.is_set():
         return False, "Stop requested."
@@ -58,6 +59,10 @@ def run_adb_command(command, serial):
 
         stdout, stderr = process.communicate()
 
+        # Add delay after command execution if specified
+        if delay_after > 0 and not is_stop_requested.is_set():
+            time.sleep(delay_after)
+
         if process.returncode != 0:
             return False, stderr.decode()
         else:
@@ -73,7 +78,49 @@ def run_adb_command(command, serial):
         return False, str(e)
 
 
-def run_text_command(text_to_send, serial, typing_delay=2.0, post_delay=3.0):
+def run_tap_command(serial, x, y, delay_before=0, delay_after=0):
+    """
+    Executes a tap command with configurable delays.
+    """
+    if is_stop_requested.is_set():
+        return False, "Stop requested."
+
+    try:
+        # Wait before tap if specified
+        if delay_before > 0:
+            time.sleep(delay_before)
+
+        # Execute tap command
+        tap_cmd = ['shell', 'input', 'tap', str(x), str(y)]
+        success, output = run_adb_command(tap_cmd, serial, delay_after)
+
+        return success, output
+    except Exception as e:
+        return False, str(e)
+
+
+def run_swipe_command(serial, x1, y1, x2, y2, duration=500, delay_before=0, delay_after=0):
+    """
+    Executes a swipe command with configurable delays.
+    """
+    if is_stop_requested.is_set():
+        return False, "Stop requested."
+
+    try:
+        # Wait before swipe if specified
+        if delay_before > 0:
+            time.sleep(delay_before)
+
+        # Execute swipe command
+        swipe_cmd = ['shell', 'input', 'swipe', str(x1), str(y1), str(x2), str(y2), str(duration)]
+        success, output = run_adb_command(swipe_cmd, serial, delay_after)
+
+        return success, output
+    except Exception as e:
+        return False, str(e)
+
+
+def run_text_command(text_to_send, serial, typing_delay=20, post_delay=20, tap_delay=20):
     """
     Sends text AND taps the post button with configurable delays.
     """
@@ -104,21 +151,14 @@ def run_text_command(text_to_send, serial, typing_delay=2.0, post_delay=3.0):
         time.sleep(float(post_delay))
 
         # 4. Tap command for Post button (Coordinates: 638, 83)
-        tap_x = 638
-        tap_y = 83
-
-        tap_cmd = ['shell', 'input', 'tap', str(tap_x), str(tap_y)]
-        subprocess.run(['adb', '-s', serial] + tap_cmd,
-                       stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL,
-                       check=True,
-                       timeout=60)
+        # Use the new run_tap_command function
+        run_tap_command(serial, 638, 83, 0, tap_delay)
 
     except Exception as e:
         pass
 
 
-def run_post_only(serial, post_delay=3.0):
+def run_post_only(serial, post_delay=3.0, tap_delay=1.0):
     """
     Executes ONLY the tap command for the Post button with delay.
     """
@@ -130,15 +170,8 @@ def run_post_only(serial, post_delay=3.0):
         time.sleep(float(post_delay))
 
         # Tap command for Post button (Coordinates: 638, 83)
-        tap_x = 638
-        tap_y = 83
-
-        tap_cmd = ['shell', 'input', 'tap', str(tap_x), str(tap_y)]
-        subprocess.run(['adb', '-s', serial] + tap_cmd,
-                       stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL,
-                       check=True,
-                       timeout=60)
+        # Use the new run_tap_command function
+        run_tap_command(serial, 638, 83, 0, tap_delay)
     except Exception:
         pass
 
@@ -279,7 +312,7 @@ class AdbControllerApp(ctk.CTk):
 
         # Row 2: Device Mgmt
         device_mgmt_frame = ctk.CTkFrame(self.control_panel, fg_color="transparent")
-        device_mgmt_frame.grid(row=2, column=0, sticky="ew", padx=20, pady=(10, 5))
+        device_mgmt_frame.grid(row=2, column=0, sticky='ew', padx=20, pady=(10, 5))
         device_mgmt_frame.grid_columnconfigure(1, weight=1)
 
         self.device_count_label = ctk.CTkLabel(device_mgmt_frame, text="DEVICES: 0",
@@ -624,17 +657,34 @@ class AdbControllerApp(ctk.CTk):
         ctk.CTkLabel(timing_frame, text="After Typing Delay (s):", font=self.FONT_BODY).grid(row=0, column=0,
                                                                                              padx=(10, 5), pady=10)
         # Input 1
-        self.typing_delay_entry = ctk.CTkEntry(timing_frame, placeholder_text="2.0", width=60, font=self.FONT_BODY)
-        self.typing_delay_entry.insert(0, "2.0")
+        self.typing_delay_entry = ctk.CTkEntry(timing_frame, placeholder_text="20", width=60, font=self.FONT_BODY)
+        self.typing_delay_entry.insert(0, "20")
         self.typing_delay_entry.grid(row=0, column=1, padx=(0, 10), pady=10, sticky='w')
 
         # Label 2
         ctk.CTkLabel(timing_frame, text="Before Post Click Delay (s):", font=self.FONT_BODY).grid(row=0, column=2,
                                                                                                   padx=(10, 5), pady=10)
         # Input 2
-        self.post_delay_entry = ctk.CTkEntry(timing_frame, placeholder_text="5.0", width=60, font=self.FONT_BODY)
-        self.post_delay_entry.insert(0, "5.0")
+        self.post_delay_entry = ctk.CTkEntry(timing_frame, placeholder_text="20", width=60, font=self.FONT_BODY)
+        self.post_delay_entry.insert(0, "20")
         self.post_delay_entry.grid(row=0, column=3, padx=(0, 10), pady=10, sticky='w')
+
+        # NEW: Additional timing controls
+        # Label 3
+        ctk.CTkLabel(timing_frame, text="Tap Delay (s):", font=self.FONT_BODY).grid(row=1, column=0,
+                                                                                    padx=(10, 5), pady=10)
+        # Input 3
+        self.tap_delay_entry = ctk.CTkEntry(timing_frame, placeholder_text="20", width=60, font=self.FONT_BODY)
+        self.tap_delay_entry.insert(0, "20")
+        self.tap_delay_entry.grid(row=1, column=1, padx=(0, 10), pady=10, sticky='w')
+
+        # Label 4
+        ctk.CTkLabel(timing_frame, text="Swipe Delay (s):", font=self.FONT_BODY).grid(row=1, column=2,
+                                                                                      padx=(10, 5), pady=10)
+        # Input 4
+        self.swipe_delay_entry = ctk.CTkEntry(timing_frame, placeholder_text="20", width=60, font=self.FONT_BODY)
+        self.swipe_delay_entry.insert(0, "20")
+        self.swipe_delay_entry.grid(row=1, column=3, padx=(0, 10), pady=10, sticky='w')
 
         # Automation Actions
         self._create_section_header(fb_frame, "Automation Actions", 11)
@@ -773,7 +823,7 @@ class AdbControllerApp(ctk.CTk):
         else:
             self.acc_status_label.configure(text=f"No folder selected.", text_color=self.COLOR_TEXT_SECONDARY)
 
-    def _run_dynamic_tap_by_content_desc(self, serial, content_desc, tap_timeout=5):
+    def _run_dynamic_tap_by_content_desc(self, serial, content_desc, tap_timeout=5, delay_before=0, delay_after=0):
         if is_stop_requested.is_set():
             return False, "Stop requested."
 
@@ -817,13 +867,8 @@ class AdbControllerApp(ctk.CTk):
             tap_x = (x1 + x2) // 2
             tap_y = (y1 + y2) // 2
 
-            tap_cmd = ['shell', 'input', 'tap', str(tap_x), str(tap_y)]
-            subprocess.run(['adb', '-s', serial] + tap_cmd,
-                           stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL,
-                           check=True,
-                           timeout=tap_timeout)
-            return True, f"Tapped {content_desc} at ({tap_x},{tap_y})"
+            # Use the new run_tap_command function with delays
+            return run_tap_command(serial, tap_x, tap_y, delay_before, delay_after)
 
         except Exception as e:
             return False, f"Error in dynamic tap: {e}"
@@ -835,54 +880,65 @@ class AdbControllerApp(ctk.CTk):
         if is_stop_requested.is_set():
             return False, "Stop requested"
 
+        # Get timing values from UI
         try:
-            run_adb_command(['shell', 'input', 'tap', '658', '85'], serial)
-            time.sleep(2)
+            tap_delay = float(self.tap_delay_entry.get())
+        except ValueError:
+            tap_delay = 1.0  # Default if invalid
+
+        try:
+            swipe_delay = float(self.swipe_delay_entry.get())
+        except ValueError:
+            swipe_delay = 1.0  # Default if invalid
+
+        try:
+            post_delay = float(self.post_delay_entry.get())
+        except ValueError:
+            post_delay = 5.0  # Default if invalid
+
+        try:
+            # Use the new run_tap_command function
+            run_tap_command(serial, 658, 85, 0, tap_delay)
         except:
             pass
 
-        swipe_cmd = ['shell', 'input', 'swipe', '359', '1233', '372', '176', '500']
+        # Use the new run_swipe_command function
         for x in range(3):
             try:
-                run_adb_command(swipe_cmd, serial)
-                time.sleep(2)
+                run_swipe_command(serial, 359, 1233, 372, 176, 500, 0, swipe_delay)
             except:
                 pass
 
         try:
-            # Ito ang existing code para sa pag-switch ng account
-            run_adb_command(['shell', 'input', 'tap', '172', '1231'], serial)
-            time.sleep(3)
+            # Use the new run_tap_command function
+            run_tap_command(serial, 172, 1231, 0, tap_delay)
 
-            run_adb_command(['shell', 'input', 'tap', '221', '720'], serial)
-            time.sleep(5)
+            run_tap_command(serial, 221, 720, 0, tap_delay)
 
-            # Subukan mahanap ang account
-            success, message = self._run_dynamic_tap_by_content_desc(serial, target_account_name)
+            # Try to find the account
+            success, message = self._run_dynamic_tap_by_content_desc(serial, target_account_name, 0, tap_delay)
 
-            # KUNG HINDI MAKITA ANG ACCOUNT, GAWIN ANG SCROLL DOWN 3 BESES
+            # IF ACCOUNT NOT FOUND, SCROLL DOWN 3 TIMES
             if not success:
                 self._update_status_if_enabled(
                     text=f"[SWITCH] Account '{target_account_name}' not found. Scrolling down 3 times...",
                     color=self.COLOR_WARNING)
 
                 # Scroll down 3 times using the coordinates you provided
-                for i in range(5):
+                for i in range(3):
                     if is_stop_requested.is_set():
                         return False, "Stop requested"
 
-                    # Scroll down from 369 956 to 364 759
-                    scroll_cmd = ['shell', 'input', 'swipe', '369', '956', '364', '759', '1000']
-                    run_adb_command(scroll_cmd, serial)
-                    time.sleep(1)  # Small delay between scrolls
+                    # Use the new run_swipe_command function
+                    success, _ = run_swipe_command(serial, 369, 956, 364, 759, 1000, 0, swipe_delay)
 
-                    # Subukan ulit mahanap ang account after bawat scroll
-                    success, message = self._run_dynamic_tap_by_content_desc(serial, target_account_name)
+                    # Try to find the account again after each scroll
+                    success, message = self._run_dynamic_tap_by_content_desc(serial, target_account_name, 0, tap_delay)
                     if success:
                         break
 
             if success:
-                time.sleep(5)
+                time.sleep(post_delay)
                 return True, f"Successfully switched to '{target_account_name}'"
             else:
                 return False, f"Failed to tap account '{target_account_name}' after scrolling. Reason: {message}"
@@ -905,6 +961,10 @@ class AdbControllerApp(ctk.CTk):
         return self._run_switch_account_by_name(serial, target_account_name)
 
     def _threaded_run_switch_account_sequence(self):
+        """
+        MODIFIED: Now cycles through ALL accounts in the file for each device,
+        instead of picking one random account.
+        """
         if not self.devices:
             self._update_status_if_enabled(text="⚠️ No devices detected.", color=self.COLOR_WARNING)
             return
@@ -914,152 +974,62 @@ class AdbControllerApp(ctk.CTk):
             return
 
         self._update_status_if_enabled(
-            text="[CMD] Starting RANDOM SWITCH ACCOUNT sequence on all devices...", color=self.COLOR_ACCENT)
+            text="[CMD] Starting CYCLICAL SWITCH ACCOUNT sequence on all devices...", color=self.COLOR_ACCENT)
 
-        futures = []
+        # Get timing value for the delay between switches. We'll reuse the post_delay.
+        try:
+            switch_cycle_delay = float(self.post_delay_entry.get())
+        except (ValueError, AttributeError):
+            switch_cycle_delay = 20  # Default delay of 5 seconds if not set or invalid
+
+        # Loop through each connected device
         for serial in self.devices:
+            if is_stop_requested.is_set():
+                self._update_status_if_enabled(text="🛑 Account switching stopped by user.", color=self.COLOR_WARNING)
+                break
+
             account_names = read_accounts_for_device(serial)
-            if not account_names or len(account_names) < 1:
+            if not account_names:
                 self._update_status_if_enabled(
                     text=f"❌ Device {serial}: No account file found or file is empty.", color=self.COLOR_DANGER)
                 continue
-            futures.append(self.executor.submit(self._run_switch_account_adb_commands, serial, account_names))
 
-        concurrent.futures.wait(futures)
-
-        success_count = 0
-        for future in futures:
-            if future.exception() is None:
-                success, _ = future.result()
-                if success:
-                    success_count += 1
-
-        if success_count == len(self.devices) and self.devices:
             self._update_status_if_enabled(
-                text=f"✅ SWITCH ACCOUNT sequence completed successfully on {success_count} devices.",
-                color=self.COLOR_SUCCESS)
-        else:
-            fail_count = len(self.devices) - success_count
-            self._update_status_if_enabled(
-                text=f"❌ SWITCH ACCOUNT sequence FAILED on {fail_count} device(s).", color=self.COLOR_DANGER)
+                text=f"[CMD] --- Starting cycle for {serial} ({len(account_names)} accounts) ---",
+                color=self.COLOR_TEXT_PRIMARY)
 
-    # --- MODIFIED: Execute Link Posting Phase (Allow No-Caption success AND Tap Post) ---
-    def _execute_link_posting_phase(self, devices_to_post, valid_pairs, is_initial_phase=False):
-        """
-        Runs link sharing.
-        MODIFIED: If caption is unchecked, it runs 'run_post_only' which taps the post button.
-        """
-        current_cycle_success = False
-
-        # --- GET TIMING SETTINGS ---
-        try:
-            typing_delay = float(self.typing_delay_entry.get())
-        except ValueError:
-            typing_delay = 2.0  # Default if invalid
-
-        try:
-            post_delay = float(self.post_delay_entry.get())
-        except ValueError:
-            post_delay = 5.0  # Default if invalid
-
-        for index, selected_pair in enumerate(valid_pairs):
-            if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
-                return current_cycle_success
-
-            share_url = selected_pair['url']
-            file_path = selected_pair['file']
-            # FORCE CAPTION CHECK: If file_path is None (checkbox unchecked), has_caption is False.
-            has_caption = False
-            clean_lines = []
-
-            if file_path and os.path.exists(file_path):
-                try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        lines = f.readlines()
-                    clean_lines = [line.strip() for line in lines if line.strip()]
-                    if clean_lines:
-                        has_caption = True
-                except Exception:
-                    pass
-
-            pair_index = index + 1
-            total_pairs = len(valid_pairs)
-
-            msg = f"[POST] Pair {pair_index}/{total_pairs}: Sharing {share_url[:20]}..."
-            if not has_caption:
-                msg += " (No Caption)"
-
-            self._update_status_if_enabled(text=msg, color=self.COLOR_TEXT_PRIMARY)
-
-            # 1. Share URL (MANDATORY)
-            share_command = [
-                'shell', 'am', 'start',
-                '-a', 'android.intent.action.SEND',
-                '-t', 'text/plain',
-                '--es', 'android.intent.extra.TEXT', f'"{share_url}"',
-                'com.facebook.lite'
-            ]
-
-            share_futures = []
-            for serial in devices_to_post:
-                if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
+            # Loop through EACH account name for the current device
+            for i, account_name in enumerate(account_names):
+                if is_stop_requested.is_set():
+                    self._update_status_if_enabled(text=f"🛑 Stopping cycle for device {serial}.",
+                                                   color=self.COLOR_WARNING)
                     break
-                share_futures.append(self.executor.submit(run_adb_command, share_command, serial))
 
-            concurrent.futures.wait(share_futures)
-            time.sleep(5)  # Wait for share dialogue
-
-            if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
-                return current_cycle_success
-
-            # 2. Type Caption (OPTIONAL) OR Just Post
-            if has_caption:
-                typing_futures = []
-                for serial in devices_to_post:
-                    if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
-                        break
-                    random_text = random.choice(clean_lines)
-                    # PASS DELAYS HERE
-                    typing_futures.append(
-                        self.executor.submit(self._run_task_with_retry, serial, random_text, pair_index, typing_delay, post_delay))
-
-                concurrent.futures.wait(typing_futures)
-
-                # If ANY typing succeeded, mark as success
-                if any(f.result()[0] for f in typing_futures if f.exception() is None):
-                    current_cycle_success = True
-            else:
-                # NEW LOGIC: Just Tap Post Button (638, 83)
                 self._update_status_if_enabled(
-                    text=f"[POST] Pair {pair_index}: No caption needed. Tapping POST button...",
+                    text=f"[CMD] {serial} ({i + 1}/{len(account_names)}): Attempting switch to '{account_name}'...",
                     color=self.COLOR_ACCENT)
 
-                post_futures = []
-                for serial in devices_to_post:
-                    if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
-                        break
-                    # PASS POST DELAY HERE
-                    post_futures.append(self.executor.submit(run_post_only, serial, post_delay))
+                # Perform the switch for the specific account
+                success, message = self._run_switch_account_by_name(serial, account_name)
 
-                concurrent.futures.wait(post_futures)
+                if success:
+                    self._update_status_if_enabled(
+                        text=f"✅ {serial}: Successfully switched to '{account_name}'.", color=self.COLOR_SUCCESS)
+                else:
+                    self._update_status_if_enabled(
+                        text=f"❌ {serial}: Failed to switch to '{account_name}'. Reason: {message}",
+                        color=self.COLOR_DANGER)
 
-                current_cycle_success = True
-                self._update_status_if_enabled(
-                    text=f"✅ Pair {pair_index}: Posted successfully (Shared + Tapped Post).",
-                    color=self.COLOR_SUCCESS)
+                # IMPORTANT: Wait before attempting the next switch for the same device
+                # This gives the app time to load and prevents spamming commands.
+                if i < len(account_names) - 1:  # No need to wait after the very last account
+                    self._update_status_if_enabled(
+                        text=f"[SYS] {serial}: Waiting {switch_cycle_delay}s before next switch...",
+                        color=self.COLOR_TEXT_SECONDARY)
+                    time.sleep(switch_cycle_delay)
 
-            # COOLDOWN
-            COOLDOWN = 10
-            self._update_status_if_enabled(
-                text=f"[SYS] Pair {pair_index} processed. Waiting {COOLDOWN}s...",
-                color=self.COLOR_TEXT_SECONDARY)
-
-            for _ in range(COOLDOWN):
-                if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
-                    return current_cycle_success
-                time.sleep(1)
-
-        return current_cycle_success
+        self._update_status_if_enabled(
+            text="✅ Account switching cycle completed for all devices.", color=self.COLOR_SUCCESS)
 
     def _threaded_find_click_type_LOOP(self, valid_pairs):
         try:
@@ -1157,12 +1127,18 @@ class AdbControllerApp(ctk.CTk):
         finally:
             self.after(0, self.stop_auto_type_loop)
 
-    def _run_task_with_retry(self, serial, text_to_send, pair_index, typing_delay=2.0, post_delay=5.0, max_retries=5):
+    def _run_task_with_retry(self, serial, text_to_send, pair_index, typing_delay=2.0, post_delay=5.0, tap_delay=1.0, max_retries=5):
+        """
+        Helper function to run the text posting task with retry logic.
+        MODIFIED: Calls _run_find_click_type_on_device instead of run_text_command directly.
+        """
         for attempt in range(max_retries):
             if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
                 return False, "Stop requested"
 
-            success, message = self._run_find_click_type_on_device(serial, text_to_send, typing_delay, post_delay)
+            # THIS CALL WAS MISSING IN YOUR PREVIOUS CODE.
+            # It dumps XML, finds the EditText, taps it, AND THEN types.
+            success, message = self._run_find_click_type_on_device(serial, text_to_send, typing_delay, post_delay, tap_delay)
 
             if success:
                 self._update_status_if_enabled(
@@ -1184,7 +1160,10 @@ class AdbControllerApp(ctk.CTk):
 
         return False, "Max retries reached"
 
-    def _run_find_click_type_on_device(self, serial, text_to_send, typing_delay, post_delay):
+    def _run_find_click_type_on_device(self, serial, text_to_send, typing_delay, post_delay, tap_delay=1.0):
+        """
+        Locates the comment text box, TAPS it, then types the message.
+        """
         local_xml_file = f"ui_dump_{serial}_{uuid.uuid4()}.xml"
 
         try:
@@ -1213,7 +1192,8 @@ class AdbControllerApp(ctk.CTk):
                     try:
                         tree = ET.parse(local_xml_file)
                         root = tree.getroot()
-                        time.sleep(6)
+                        # Removed the sleep(6) here as it slows down finding significantly, usually not needed if XML is fresh
+                        # time.sleep(1)
                         edit_text_node = root.find('.//node[@class="android.widget.EditText"]')
                         if edit_text_node is not None:
                             bounds_str = edit_text_node.get('bounds')
@@ -1234,16 +1214,17 @@ class AdbControllerApp(ctk.CTk):
             else:
                 return False, "Stop requested"
 
+            # 1. TAP THE TEXT BOX
             if self.is_auto_typing.is_set() and not is_stop_requested.is_set():
-                tap_cmd = ['shell', 'input', 'tap', str(tap_x), str(tap_y)]
-                success, out = run_adb_command(tap_cmd, serial)
-                if not success:
-                    return False, "Failed to tap"
-                time.sleep(3)
+                # Use run_tap_command with the tap_delay
+                run_tap_command(serial, tap_x, tap_y, 0, tap_delay)
+                # Wait a bit for keyboard to potentially open
+                time.sleep(1)
 
+            # 2. TYPE AND POST
             if self.is_auto_typing.is_set() and not is_stop_requested.is_set():
-                # PASS DELAYS DOWN TO RUN_TEXT_COMMAND
-                run_text_command(text_to_send, serial, typing_delay, post_delay)
+                # PASS ALL DELAYS DOWN TO RUN_TEXT_COMMAND
+                run_text_command(text_to_send, serial, typing_delay, post_delay, tap_delay)
                 return True, "Success"
             else:
                 return False, "Stop requested"
@@ -1254,55 +1235,238 @@ class AdbControllerApp(ctk.CTk):
             if os.path.exists(local_xml_file):
                 os.remove(local_xml_file)
 
-    def _threaded_airplane_mode(self, mode):
-        if not self.devices:
-            self._update_status_if_enabled(text="⚠️ No devices detected.", color=self.COLOR_WARNING)
-            return
-        state = '1' if mode == 'enable' else '0'
-        name = 'ENABLE' if mode == 'enable' else 'DISABLE'
-        self._update_status_if_enabled(text=f"[CMD] Sending {name} AIRPLANE MODE command...", color=self.COLOR_ACCENT)
-        set_cmd = ['shell', 'settings', 'put', 'global', 'airplane_mode_on', state]
-        broadcast_cmd = ['shell', 'am', 'broadcast', '-a', 'android.intent.action.AIRPLANE_MODE']
-        for serial in self.devices:
-            self.executor.submit(run_adb_command, set_cmd, serial)
-            self.executor.submit(run_adb_command, broadcast_cmd, serial)
-        self._update_status_if_enabled(text=f"✅ AIRPLANE MODE {name} command sent.", color=self.COLOR_SUCCESS)
+    # --- MODIFIED: Execute Link Posting Phase (Allow No-Caption success AND Tap Post) ---
+    def _execute_link_posting_phase(self, devices_to_post, valid_pairs, is_initial_phase=False):
+        """
+        Runs link sharing.
+        MODIFIED: If caption is unchecked, it runs 'run_post_only' which taps the post button.
+        """
+        current_cycle_success = False
+
+        # --- GET TIMING SETTINGS ---
+        try:
+            typing_delay = float(self.typing_delay_entry.get())
+        except ValueError:
+            typing_delay = 20  # Default if invalid
+
+        try:
+            post_delay = float(self.post_delay_entry.get())
+        except ValueError:
+            post_delay = 20  # Default if invalid
+
+        try:
+            tap_delay = float(self.tap_delay_entry.get())
+        except ValueError:
+            tap_delay = 20  # Default if invalid
+
+        for index, selected_pair in enumerate(valid_pairs):
+            if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
+                return current_cycle_success
+
+            share_url = selected_pair['url']
+            file_path = selected_pair['file']
+            # FORCE CAPTION CHECK: If file_path is None (checkbox unchecked), has_caption is False.
+            has_caption = False
+            clean_lines = []
+
+            if file_path and os.path.exists(file_path):
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        lines = f.readlines()
+                    clean_lines = [line.strip() for line in lines if line.strip()]
+                    if clean_lines:
+                        has_caption = True
+                except Exception:
+                    pass
+
+            pair_index = index + 1
+            total_pairs = len(valid_pairs)
+
+            msg = f"[POST] Pair {pair_index}/{total_pairs}: Sharing {share_url[:20]}..."
+            if not has_caption:
+                msg += " (No Caption)"
+
+            self._update_status_if_enabled(text=msg, color=self.COLOR_TEXT_PRIMARY)
+
+            # 1. Share URL (MANDATORY)
+            share_command = [
+                'shell', 'am', 'start',
+                '-a', 'android.intent.action.SEND',
+                '-t', 'text/plain',
+                '--es', 'android.intent.extra.TEXT', f'"{share_url}"',
+                'com.facebook.lite'
+            ]
+
+            share_futures = []
+            for serial in devices_to_post:
+                if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
+                    break
+                share_futures.append(self.executor.submit(run_adb_command, share_command, serial))
+
+            concurrent.futures.wait(share_futures)
+            time.sleep(5)  # Wait for share dialogue
+
+            if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
+                return current_cycle_success
+
+            # 2. Type Caption (OPTIONAL) OR Just Post
+            if has_caption:
+                typing_futures = []
+                for serial in devices_to_post:
+                    if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
+                        break
+                    random_text = random.choice(clean_lines)
+                    # PASS ALL DELAYS HERE
+                    typing_futures.append(
+                        self.executor.submit(self._run_task_with_retry, serial, random_text, pair_index,
+                                             typing_delay, post_delay, tap_delay))
+
+                concurrent.futures.wait(typing_futures)
+
+                # If ANY typing succeeded, mark as success
+                if any(f.result()[0] for f in typing_futures if f.exception() is None):
+                    current_cycle_success = True
+            else:
+                # NEW LOGIC: Just Tap Post Button (638, 83)
+                self._update_status_if_enabled(
+                    text=f"[POST] Pair {pair_index}: No caption needed. Tapping POST button...",
+                    color=self.COLOR_ACCENT)
+
+                post_futures = []
+                for serial in devices_to_post:
+                    if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
+                        break
+                    # PASS ALL DELAYS HERE
+                    post_futures.append(self.executor.submit(run_post_only, serial, post_delay, tap_delay))
+
+                concurrent.futures.wait(post_futures)
+
+                current_cycle_success = True
+                self._update_status_if_enabled(
+                    text=f"✅ Pair {pair_index}: Posted successfully (Shared + Tapped Post).",
+                    color=self.COLOR_SUCCESS)
+
+            # COOLDOWN
+            COOLDOWN = 10
+            self._update_status_if_enabled(
+                text=f"[SYS] Pair {pair_index} processed. Waiting {COOLDOWN}s...",
+                color=self.COLOR_TEXT_SECONDARY)
+
+            for _ in range(COOLDOWN):
+                if not self.is_auto_typing.is_set() or is_stop_requested.is_set():
+                    return current_cycle_success
+                time.sleep(1)
+
+        return current_cycle_success
 
     def enable_airplane_mode(self):
-        threading.Thread(target=self._threaded_airplane_mode, args=('enable',), daemon=True).start()
-
-    def disable_airplane_mode(self):
-        threading.Thread(target=self._threaded_airplane_mode, args=('disable',), daemon=True).start()
-
-    def browse_apk_file(self):
-        file_path = filedialog.askopenfilename(defaultextension=".apk", filetypes=[("APK files", "*.apk")])
-        if file_path:
-            self.apk_path = file_path
-            self.apk_path_entry.delete(0, tk.END)
-            self.apk_path_entry.insert(0, os.path.basename(file_path))
-            self._update_status_if_enabled(text=f"✅ APK SELECTED: {os.path.basename(file_path)}",
-                                           color=self.COLOR_SUCCESS)
-
-    def install_apk_to_devices(self):
-        if not self.apk_path or not os.path.exists(self.apk_path):
-            self._update_status_if_enabled(text="⚠️ Please select a valid APK file first.", color=self.COLOR_WARNING)
-            return
+        """Enable airplane mode on all connected devices with timing control."""
         if not self.devices:
             self._update_status_if_enabled(text="⚠️ No devices detected.", color=self.COLOR_WARNING)
             return
-        self._update_status_if_enabled(text=f"[CMD] Installing {os.path.basename(self.apk_path)}...",
-                                       color=self.COLOR_ACCENT)
-        command = ['install', '-r', self.apk_path]
 
-        def _install_task(serial):
-            return run_adb_command(command, serial)
+        # Get timing values from UI
+        try:
+            tap_delay = float(self.tap_delay_entry.get())
+        except ValueError:
+            tap_delay = 20  # Default if invalid
 
-        futures = [self.executor.submit(_install_task, serial) for serial in self.devices]
+        self._update_status_if_enabled(text="Enabling airplane mode...", color=self.COLOR_ACCENT)
+
+        futures = []
+        for serial in self.devices:
+            futures.append(self.executor.submit(run_tap_command, serial, 540, 1215, 0, tap_delay))
+
         concurrent.futures.wait(futures)
-        if all(f.result()[0] for f in futures):
-            self._update_status_if_enabled(text="✅ APK INSTALL SUCCESSFUL.", color=self.COLOR_SUCCESS)
+
+        self._update_status_if_enabled(text="✅ Airplane mode enabled.", color=self.COLOR_SUCCESS)
+
+    def disable_airplane_mode(self):
+        """Disable airplane mode on all connected devices with timing control."""
+        if not self.devices:
+            self._update_status_if_enabled(text="⚠️ No devices detected.", color=self.COLOR_WARNING)
+            return
+
+        # Get timing values from UI
+        try:
+            tap_delay = float(self.tap_delay_entry.get())
+        except ValueError:
+            tap_delay = 20  # Default if invalid
+
+        self._update_status_if_enabled(text="Disabling airplane mode...", color=self.COLOR_ACCENT)
+
+        futures = []
+        for serial in self.devices:
+            futures.append(self.executor.submit(run_tap_command, serial, 540, 1215, 0, tap_delay))
+
+        concurrent.futures.wait(futures)
+
+        self._update_status_if_enabled(text="✅ Airplane mode disabled.", color=self.COLOR_SUCCESS)
+
+    # ==============================================================================
+    # === FUNCTIONAL METHODS (SOME ARE PLACEHOLDERS) ===
+    # ==============================================================================
+
+    def stop_all_commands(self):
+        self._update_status_if_enabled(text="⚠️ TERMINATING ALL ACTIVE COMMANDS...", color=self.COLOR_WARNING)
+        is_stop_requested.set()
+        self.stop_auto_type_loop()
+        self.executor.shutdown(wait=True)
+        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=multiprocessing.cpu_count() * 4)
+        is_stop_requested.clear()
+        self._update_status_if_enabled(text="✅ ALL OPERATIONS TERMINATED. Ready.", color=self.COLOR_SUCCESS)
+
+    def detect_devices(self):
+        """Detects connected ADB devices and updates the UI."""
+        try:
+            # Clear current device list
+            self.devices.clear()
+
+            # Run 'adb devices' command
+            result = subprocess.run(['adb', 'devices'], capture_output=True, text=True, check=True)
+            lines = result.stdout.splitlines()
+
+            # Parse the output to get device serial numbers
+            for line in lines[1:]:  # Skip the first line ("List of devices attached")
+                if '\tdevice' in line:
+                    serial_number = line.split('\t')[0]
+                    self.devices.append(serial_number)
+
+            # Update UI
+            if self.devices:
+                self.device_option_menu.configure(values=self.devices)
+                self.device_option_menu.set(self.devices[0])
+                self.device_option_menu.configure(state="normal")
+                self.device_count_label.configure(text=f"DEVICES: {len(self.devices)}")
+                self._update_status_if_enabled(text=f"✅ Found {len(self.devices)} device(s).", color=self.COLOR_SUCCESS)
+            else:
+                self.device_option_menu.configure(values=["No devices found"])
+                self.device_option_menu.set("No devices found")
+                self.device_option_menu.configure(state="disabled")
+                self.device_count_label.configure(text="DEVICES: 0")
+                self._update_status_if_enabled(text="⚠️ No devices found. Please check connections and USB debugging.",
+                                               color=self.COLOR_WARNING)
+
+        except FileNotFoundError:
+            self._update_status_if_enabled(text="❌ ADB not found. Please install it and add to PATH.",
+                                           color=self.COLOR_DANGER)
+            messagebox.showerror("ADB Error",
+                                 "ADB command not found.\nPlease install Android SDK Platform-Tools and ensure 'adb' is in your system's PATH.")
+        except subprocess.CalledProcessError as e:
+            self._update_status_if_enabled(text=f"❌ Error running adb devices: {e.stderr}", color=self.COLOR_DANGER)
+        except Exception as e:
+            self._update_status_if_enabled(text=f"❌ An unknown error occurred: {e}", color=self.COLOR_DANGER)
+
+    def on_device_select_menu(self, choice):
+        """Handles device selection from the dropdown menu."""
+        if choice and choice != "No devices found":
+            self.selected_device_serial = choice
+            self._update_status_if_enabled(text=f"Selected device: {choice}", color=self.COLOR_ACCENT)
+            # Here you would typically start the screen capture for the selected device
+            # self.start_capture_for_device(choice)
         else:
-            self._update_status_if_enabled(text=f"❌ INSTALLATION FAILED on some devices.", color=self.COLOR_DANGER)
+            self.selected_device_serial = None
+            self.stop_capture()
 
     def update_app(self):
         def _update_in_thread():
@@ -1329,7 +1493,38 @@ class AdbControllerApp(ctk.CTk):
 
         threading.Thread(target=_update_in_thread, daemon=True).start()
 
-    # --- MODIFIED: Add Share Pair with Checkbox ---
+    def launch_fb_lite(self):
+        if not self.devices:
+            self._update_status_if_enabled(text="⚠️ No devices detected.", color=self.COLOR_WARNING)
+            return
+        self._update_status_if_enabled(text=f"[CMD] Launching Facebook Lite...", color=self.COLOR_ACCENT)
+        command = ['shell', 'am', 'start', '-n', 'com.facebook.lite/com.facebook.lite.MainActivity']
+        for device_serial in self.devices:
+            self.executor.submit(run_adb_command, command, device_serial)
+        self._update_status_if_enabled(text="✅ Launched Facebook Lite on all devices.", color=self.COLOR_SUCCESS)
+
+    def force_stop_fb_lite(self):
+        if not self.devices:
+            self._update_status_if_enabled(text="⚠️ No devices detected.", color=self.COLOR_WARNING)
+            return
+        self._update_status_if_enabled(text=f"[CMD] Force stopping Facebook Lite...", color=self.COLOR_DANGER)
+        command = ['shell', 'am', 'force-stop', 'com.facebook.lite']
+        for device_serial in self.devices:
+            self.executor.submit(run_adb_command, command, device_serial)
+        self._update_status_if_enabled(text="✅ Force stopped Facebook Lite on all devices.", color=self.COLOR_SUCCESS)
+
+    def open_fb_lite_deeplink(self):
+        post_url = self.fb_url_entry.get()
+        if not post_url or not self.devices:
+            self._update_status_if_enabled(text="⚠️ Check URL and devices.", color=self.COLOR_WARNING)
+            return
+        self._update_status_if_enabled(text=f"[CMD] Opening FB post URL...", color=self.COLOR_ACCENT)
+        command = ['shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', f'"{post_url}"',
+                   'com.facebook.lite']
+        for device_serial in self.devices:
+            self.executor.submit(run_adb_command, command, device_serial)
+        self._update_status_if_enabled(text="✅ Visited FB post on all devices.", color=self.COLOR_SUCCESS)
+
     def add_share_pair(self, is_initial=False):
         """Adds a new row for a share URL and its corresponding caption file + Checkbox."""
         frame = ctk.CTkFrame(self.share_pair_frame, fg_color=self.COLOR_BACKGROUND, corner_radius=8)
@@ -1400,17 +1595,6 @@ class AdbControllerApp(ctk.CTk):
         frame.pack(fill='x', padx=5, pady=5)
         self.share_pair_frame.update_idletasks()
 
-    def remove_share_pair(self, pair_frame_to_remove):
-        for i, pair in enumerate(self.share_pairs):
-            if pair['frame'] == pair_frame_to_remove:
-                pair['frame'].destroy()
-                self.share_pairs.pop(i)
-                self._update_status_if_enabled(text=f"✅ Link/Caption Pair removed.", color=self.COLOR_SUCCESS)
-                if self.is_auto_typing.is_set():
-                    self.stop_auto_type_loop()
-                    self.after(100, self.start_auto_type_loop)
-                return
-
     def browse_share_pair_file(self, target_entry):
         file_path = filedialog.askopenfilename(defaultextension=".txt",
                                                filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
@@ -1463,54 +1647,6 @@ class AdbControllerApp(ctk.CTk):
 
     def send_text_to_devices(self):
         threading.Thread(target=self._threaded_send_text, daemon=True).start()
-
-    # --- MODIFIED: Start Auto Type Loop (Gather Caption Settings) ---
-    def start_auto_type_loop(self):
-        if self.is_auto_typing.is_set():
-            return
-
-        valid_pairs = []
-        for pair in self.share_pairs:
-            share_url = pair['url_entry'].get()
-
-            # Check the Checkbox state!
-            use_caption = pair['use_caption_var'].get()
-            file_path = pair['file_entry'].get()
-
-            if share_url:
-                # If unchecked, set file to None so logic knows not to look for it
-                final_file_path = file_path if use_caption else None
-                valid_pairs.append({'url': share_url, 'file': final_file_path, 'use_caption': use_caption})
-
-        if not valid_pairs:
-            self._update_status_if_enabled(text="⚠️ No valid Links found.", color=self.COLOR_WARNING)
-            return
-
-        if not self.devices:
-            self._update_status_if_enabled(text="⚠️ No devices detected.", color=self.COLOR_WARNING)
-            return
-
-        self.is_auto_typing.set()
-        self.find_click_type_button.configure(text="STOP AUTO-TYPE 🛑",
-                                              fg_color=self.COLOR_DANGER,
-                                              hover_color=self.COLOR_DANGER_HOVER,
-                                              text_color=self.COLOR_TEXT_PRIMARY)
-        self._update_status_if_enabled(text="[CMD] Auto-type loop STARTED.", color=self.COLOR_SUCCESS)
-        threading.Thread(target=self._threaded_find_click_type_LOOP, args=(valid_pairs,), daemon=True).start()
-
-    def stop_auto_type_loop(self):
-        self.is_auto_typing.clear()
-        if hasattr(self, 'find_click_type_button') and self.find_click_type_button.winfo_exists():
-            self.find_click_type_button.configure(text="START AUTO-TYPE ⌨️",
-                                                  fg_color=self.COLOR_ACCENT,
-                                                  hover_color=self.COLOR_ACCENT_HOVER,
-                                                  text_color=self.COLOR_BACKGROUND)
-
-    def toggle_auto_type_loop(self):
-        if self.is_auto_typing.is_set():
-            self.stop_auto_type_loop()
-        else:
-            self.start_auto_type_loop()
 
     def remove_emojis_from_file(self):
         if not self.share_pairs:
@@ -1858,37 +1994,81 @@ class AdbControllerApp(ctk.CTk):
         for device_serial in self.devices:
             self.executor.submit(run_adb_command, command, device_serial)
 
-    def open_fb_lite_deeplink(self):
-        post_url = self.fb_url_entry.get()
-        if not post_url or not self.devices:
-            self._update_status_if_enabled(text="⚠️ Check URL and devices.", color=self.COLOR_WARNING)
+    def start_auto_type_loop(self):
+        if self.is_auto_typing.is_set():
             return
-        self._update_status_if_enabled(text=f"[CMD] Opening FB post URL...", color=self.COLOR_ACCENT)
-        command = ['shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', f'"{post_url}"',
-                   'com.facebook.lite']
-        for device_serial in self.devices:
-            self.executor.submit(run_adb_command, command, device_serial)
-        self._update_status_if_enabled(text="✅ Visited FB post on all devices.", color=self.COLOR_SUCCESS)
 
-    def launch_fb_lite(self):
+        valid_pairs = []
+        for pair in self.share_pairs:
+            share_url = pair['url_entry'].get()
+
+            # Check the Checkbox state!
+            use_caption = pair['use_caption_var'].get()
+            file_path = pair['file_entry'].get()
+
+            if share_url:
+                # If unchecked, set file to None so logic knows not to look for it
+                final_file_path = file_path if use_caption else None
+                valid_pairs.append({'url': share_url, 'file': final_file_path, 'use_caption': use_caption})
+
+        if not valid_pairs:
+            self._update_status_if_enabled(text="⚠️ No valid Links found.", color=self.COLOR_WARNING)
+            return
+
         if not self.devices:
             self._update_status_if_enabled(text="⚠️ No devices detected.", color=self.COLOR_WARNING)
             return
-        self._update_status_if_enabled(text=f"[CMD] Launching Facebook Lite...", color=self.COLOR_ACCENT)
-        command = ['shell', 'am', 'start', '-n', 'com.facebook.lite/com.facebook.lite.MainActivity']
-        for device_serial in self.devices:
-            self.executor.submit(run_adb_command, command, device_serial)
-        self._update_status_if_enabled(text="✅ Launched Facebook Lite on all devices.", color=self.COLOR_SUCCESS)
 
-    def force_stop_fb_lite(self):
+        self.is_auto_typing.set()
+        self.find_click_type_button.configure(text="STOP AUTO-TYPE 🛑",
+                                              fg_color=self.COLOR_DANGER,
+                                              hover_color=self.COLOR_DANGER_HOVER,
+                                              text_color=self.COLOR_TEXT_PRIMARY)
+        self._update_status_if_enabled(text="[CMD] Auto-type loop STARTED.", color=self.COLOR_SUCCESS)
+        threading.Thread(target=self._threaded_find_click_type_LOOP, args=(valid_pairs,), daemon=True).start()
+
+    def stop_auto_type_loop(self):
+        self.is_auto_typing.clear()
+        if hasattr(self, 'find_click_type_button') and self.find_click_type_button.winfo_exists():
+            self.find_click_type_button.configure(text="START AUTO-TYPE ⌨️",
+                                                  fg_color=self.COLOR_ACCENT,
+                                                  hover_color=self.COLOR_ACCENT_HOVER,
+                                                  text_color=self.COLOR_BACKGROUND)
+    def toggle_auto_type_loop(self):
+        if self.is_auto_typing.is_set():
+            self.stop_auto_type_loop()
+        else:
+            self.start_auto_type_loop()
+
+    def browse_apk_file(self):
+        file_path = filedialog.askopenfilename(defaultextension=".apk", filetypes=[("APK files", "*.apk")])
+        if file_path:
+            self.apk_path = file_path
+            self.apk_path_entry.delete(0, tk.END)
+            self.apk_path_entry.insert(0, os.path.basename(file_path))
+            self._update_status_if_enabled(text=f"✅ APK SELECTED: {os.path.basename(file_path)}",
+                                           color=self.COLOR_SUCCESS)
+
+    def install_apk_to_devices(self):
+        if not self.apk_path or not os.path.exists(self.apk_path):
+            self._update_status_if_enabled(text="⚠️ Please select a valid APK file first.", color=self.COLOR_WARNING)
+            return
         if not self.devices:
             self._update_status_if_enabled(text="⚠️ No devices detected.", color=self.COLOR_WARNING)
             return
-        self._update_status_if_enabled(text=f"[CMD] Force stopping Facebook Lite...", color=self.COLOR_DANGER)
-        command = ['shell', 'am', 'force-stop', 'com.facebook.lite']
-        for device_serial in self.devices:
-            self.executor.submit(run_adb_command, command, device_serial)
-        self._update_status_if_enabled(text="✅ Force stopped Facebook Lite on all devices.", color=self.COLOR_SUCCESS)
+        self._update_status_if_enabled(text=f"[CMD] Installing {os.path.basename(self.apk_path)}...",
+                                       color=self.COLOR_ACCENT)
+        command = ['install', '-r', self.apk_path]
+
+        def _install_task(serial):
+            return run_adb_command(command, serial)
+
+        futures = [self.executor.submit(_install_task, serial) for serial in self.devices]
+        concurrent.futures.wait(futures)
+        if all(f.result()[0] for f in futures):
+            self._update_status_if_enabled(text="✅ APK INSTALL SUCCESSFUL.", color=self.COLOR_SUCCESS)
+        else:
+            self._update_status_if_enabled(text=f"❌ INSTALLATION FAILED on some devices.", color=self.COLOR_DANGER)
 
     def share_image_to_fb_lite(self):
         file_name = self.image_file_name_entry.get()
@@ -1904,17 +2084,13 @@ class AdbControllerApp(ctk.CTk):
             self.executor.submit(run_adb_command, command, device_serial)
         self._update_status_if_enabled(text="✅ Image sharing command sent to all devices.", color=self.COLOR_SUCCESS)
 
-    def stop_all_commands(self):
-        self._update_status_if_enabled(text="⚠️ TERMINATING ALL ACTIVE COMMANDS...", color=self.COLOR_WARNING)
-        is_stop_requested.set()
-        self.stop_auto_type_loop()
-        self.executor.shutdown(wait=True)
-        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=multiprocessing.cpu_count() * 4)
-        is_stop_requested.clear()
-        self._update_status_if_enabled(text="✅ ALL OPERATIONS TERMINATED. Ready.", color=self.COLOR_SUCCESS)
+    def stop_capture(self):
+        self.is_capturing = False
+        if self.update_image_id:
+            self.after_cancel(self.update_image_id)
+            self.update_image_id = None
+        self.screenshot_queue.queue.clear()
 
-
-if __name__ == '__main__':
-    multiprocessing.freeze_support()
+if __name__ == "__main__":
     app = AdbControllerApp()
     app.mainloop()
