@@ -23,7 +23,7 @@ import uuid
 import xml.etree.ElementTree as ET
 
 # --- App Version and Update URL ---
-__version__ = "23"
+__version__ = "24"
 UPDATE_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/main.py"
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/version.txt"
 
@@ -2057,3 +2057,4 @@ class AdbControllerApp(ctk.CTk):
 if __name__ == "__main__":
     app = AdbControllerApp()
     app.mainloop()
+
