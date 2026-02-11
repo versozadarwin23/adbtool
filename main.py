@@ -23,7 +23,7 @@ import uuid
 import xml.etree.ElementTree as ET
 
 # --- App Version and Update URL ---
-__version__ = "24"
+__version__ = "25"
 UPDATE_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/main.py"
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/versozadarwin23/adbtool/refs/heads/main/version.txt"
 
@@ -36,7 +36,6 @@ CONFIG_FILE = "config.json"
 
 
 # --- NEW FUNCTION: Smart Sleep ---
-# Ito ang papalit sa time.sleep para pwede ma-interrupt agad kapag nag STOP
 def smart_sleep(seconds):
     end_time = time.time() + float(seconds)
     while time.time() < end_time:
@@ -79,12 +78,11 @@ def run_adb_command(command, serial, delay_after=0):
                 process.terminate()
                 return False, "Terminated due to stop request."
 
-            time.sleep(0.1)  # Prevent CPU hogging
+            time.sleep(0.1)
 
         stdout, stderr = process.communicate()
 
         if delay_after > 0:
-            # Use smart_sleep instead of time.sleep
             if not smart_sleep(delay_after):
                 return False, "Stop requested during delay."
 
@@ -155,17 +153,17 @@ def run_text_command(text_to_send, serial, typing_delay=20, post_delay=20, tap_d
         subprocess.run(['adb', '-s', serial] + command_args,
                        stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL,
-                       check=False,  # Changed to False to prevent crash on small errors
+                       check=False,
                        timeout=5,
                        startupinfo=startupinfo)
 
-        # 2. Wait after typing (Typing Delay) - Use smart_sleep
+        # 2. Wait after typing
         if not smart_sleep(float(typing_delay)): return
 
         if is_stop_requested.is_set():
             return
 
-        # 3. Wait before clicking Post (Post Delay) - Use smart_sleep
+        # 3. Wait before clicking Post
         if not smart_sleep(float(post_delay)): return
 
         # 4. Tap command for Post button
@@ -179,7 +177,6 @@ def run_post_only(serial, post_delay=3.0, tap_delay=1.0):
     if is_stop_requested.is_set():
         return
     try:
-        # Use smart_sleep
         if not smart_sleep(float(post_delay)): return
         run_tap_command(serial, 638, 83, 0, tap_delay)
     except Exception:
@@ -242,7 +239,7 @@ class AdbControllerApp(ctk.CTk):
         self.COLOR_TEXT_PRIMARY = "#C9D1D9"
         self.COLOR_TEXT_SECONDARY = "#8B949E"
 
-        # --- Fonts (Adjusted for smaller screen) ---
+        # --- Fonts ---
         self.FONT_TITLE = ctk.CTkFont(family="Consolas", size=24, weight="bold")
         self.FONT_HEADING = ctk.CTkFont(family="Consolas", size=14, weight="bold")
         self.FONT_SUBHEADING = ctk.CTkFont(family="Consolas", size=13, weight="bold")
@@ -276,14 +273,16 @@ class AdbControllerApp(ctk.CTk):
         self.share_pairs = []
         self.share_pair_frame = None
         self.is_auto_typing = threading.Event()
-        self.is_logging_enabled = tk.BooleanVar(value=False)  # Changed default to True
+        self.is_logging_enabled = tk.BooleanVar(value=False)
         self.account_dir_path = ""
         self.device_account_cycle = {}
+
+        # --- NEW: Device Type Selection Variable ---
+        self.device_type_var = ctk.StringVar(value="OPPO") # Default to OPPO
 
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=multiprocessing.cpu_count() * 4)
 
         # --- Main Window Grid ---
-        # Reduced minsize from 680 to 420 to fit 1366 width
         self.grid_columnconfigure(0, weight=0, minsize=680)
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -519,7 +518,7 @@ class AdbControllerApp(ctk.CTk):
         try:
             self.is_update_prompt_showing = True
             title = "New Update!"
-            message = (f"Version ({latest_version}) is available!\nUpdate now?")
+            message = (f"New Supported Vivo y11 Version ({latest_version}) is available!\nUpdate now?")
             response = messagebox.askyesno(title, message)
             if response:
                 self.update_app()
@@ -610,6 +609,18 @@ class AdbControllerApp(ctk.CTk):
                                                    height=self.BTN_H, width=30, font=self.FONT_BUTTON,
                                                    text_color=self.COLOR_TEXT_PRIMARY)
         self.switch_acc_tip_button.grid(row=0, column=3, sticky='e', padx=(5, 10), pady=10)
+
+        # --- NEW: Device Type Selector ---
+        # Add a row below buttons for device selection
+        ctk.CTkLabel(fb_app_frame, text="Device Model:", font=self.FONT_BODY).grid(row=1, column=0, sticky='e', padx=5, pady=5)
+        self.device_type_menu = ctk.CTkOptionMenu(fb_app_frame,
+                                                  values=["OPPO", "VIVO"],
+                                                  variable=self.device_type_var,
+                                                  width=120,
+                                                  height=28,
+                                                  font=self.FONT_BODY)
+        self.device_type_menu.grid(row=1, column=1, sticky='w', padx=5, pady=5)
+
 
         # Single Post
         self._create_section_header(fb_frame, "Single Post Visit", 4)
@@ -897,10 +908,18 @@ class AdbControllerApp(ctk.CTk):
                 pass
 
         try:
-            # Use the new run_tap_command function
-            run_tap_command(serial, 172, 1231, 0, tap_delay)
-
-            run_tap_command(serial, 221, 720, 0, tap_delay)
+            # --- MODIFIED: CHECK DEVICE TYPE (OPPO VS VIVO) ---
+            if self.device_type_var.get() == "VIVO":
+                # tap logout button1 (VIVO)
+                run_tap_command(serial, 112, 1388, 0, tap_delay)
+                # tap logout button2 (VIVO)
+                run_tap_command(serial, 95, 784, 0, tap_delay)
+            else:
+                # tap logout button1 (OPPO / Default)
+                run_tap_command(serial, 172, 1231, 0, tap_delay)
+                # tap logout button2 (OPPO / Default)
+                run_tap_command(serial, 221, 720, 0, tap_delay)
+            # --------------------------------------------------
 
             # Try to find the account
             success, message = self._run_dynamic_tap_by_content_desc(serial, target_account_name, 0, tap_delay)
@@ -1897,6 +1916,8 @@ class AdbControllerApp(ctk.CTk):
                         'height': self.BTN_H, 'font': self.FONT_BUTTON}
         button_padx = 2
 
+        # Note: DOWN button calls 'down' (scroll down view), UP button calls 'up' (scroll up view)
+        # In original code, these were reversed. Swapped back to be intuitive.
         ctk.CTkButton(button_frame, text="HOME", command=lambda: self.send_adb_keyevent(3),
                       **button_style).grid(row=0, column=0, padx=button_padx, sticky="ew")
         ctk.CTkButton(button_frame, text="BACK", command=lambda: self.send_adb_keyevent(4),
@@ -1904,13 +1925,13 @@ class AdbControllerApp(ctk.CTk):
         ctk.CTkButton(button_frame, text="APPS", command=lambda: self.send_adb_keyevent(187),
                       **button_style).grid(row=0, column=2, padx=button_padx, sticky="ew")
         ctk.CTkButton(button_frame, text="DOWN",
-                      command=lambda: self.send_adb_swipe(serial, 'up'), **button_style).grid(row=0, column=3,
-                                                                                              padx=button_padx,
-                                                                                              sticky="ew")
-        ctk.CTkButton(button_frame, text="UP",
-                      command=lambda: self.send_adb_swipe(serial, 'down'), **button_style).grid(row=0, column=4,
+                      command=lambda: self.send_adb_swipe(serial, 'down'), **button_style).grid(row=0, column=3,
                                                                                                 padx=button_padx,
                                                                                                 sticky="ew")
+        ctk.CTkButton(button_frame, text="UP",
+                      command=lambda: self.send_adb_swipe(serial, 'up'), **button_style).grid(row=0, column=4,
+                                                                                              padx=button_padx,
+                                                                                              sticky="ew")
         ctk.CTkButton(button_frame, text="OFF", command=lambda: self.send_adb_keyevent(26),
                       corner_radius=8, width=80, fg_color=self.COLOR_DANGER,
                       hover_color=self.COLOR_DANGER_HOVER,
@@ -1992,6 +2013,9 @@ class AdbControllerApp(ctk.CTk):
 
             adb_size_output = subprocess.run(['adb', '-s', serial, 'shell', 'wm', 'size'], capture_output=True,
                                              text=True, check=True, timeout=5, startupinfo=startupinfo).stdout.strip()
+            # Handle potential adb output issues safely
+            if not adb_size_output:
+                return None, None
             adb_width, adb_height = map(int, adb_size_output.split()[-1].split('x'))
         except Exception:
             return None, None
@@ -2027,7 +2051,7 @@ class AdbControllerApp(ctk.CTk):
 
     def send_adb_swipe(self, serial, direction):
         try:
-            # FIX: StartInfo for size check
+            # FIX: StartInfo for size check - ADDED MISSING STARTUPINFO DEFINITION
             startupinfo = None
             if sys.platform.startswith('win'):
                 startupinfo = subprocess.STARTUPINFO()
@@ -2036,12 +2060,18 @@ class AdbControllerApp(ctk.CTk):
             adb_width_str = subprocess.run(['adb', '-s', serial, 'shell', 'wm', 'size'], capture_output=True, text=True,
                                            check=True, startupinfo=startupinfo).stdout.strip().split()[-1]
             adb_width, adb_height = map(int, adb_width_str.split('x'))
+
             if direction == 'down':
+                # Swipe bottom to top (Scroll Down)
                 start_x, start_y = adb_width // 2, adb_height // 4 * 3
                 end_x, end_y = start_x, adb_height // 4
             elif direction == 'up':
+                # Swipe top to bottom (Scroll Up)
                 start_x, start_y = adb_width // 2, adb_height // 4
                 end_x, end_y = start_x, adb_height // 4 * 3
+            else:
+                return
+
             command = ['shell', 'input', 'swipe', str(start_x), str(start_y), str(end_x), str(end_y), '300']
             for device_serial in self.devices:
                 self.executor.submit(run_adb_command, command, device_serial)
@@ -2057,4 +2087,3 @@ class AdbControllerApp(ctk.CTk):
 if __name__ == "__main__":
     app = AdbControllerApp()
     app.mainloop()
-
